@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       }[]>`
         WITH player_matches AS (
           SELECT 
-            p.name,
+            TRIM(p.name) as name,
             CASE 
               WHEN (m.team_a_p1 = p.id OR m.team_a_p2 = p.id) AND m.winner_team = 'A' THEN 1
               WHEN (m.team_b_p1 = p.id OR m.team_b_p2 = p.id) AND m.winner_team = 'B' THEN 1
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
       }[]>`
         WITH player_matches AS (
           SELECT 
-            p.name,
+            TRIM(p.name) as name,
             CASE 
               WHEN (m.team_a_p1 = p.id OR m.team_a_p2 = p.id) AND m.winner_team = 'A' THEN 1
               WHEN (m.team_b_p1 = p.id OR m.team_b_p2 = p.id) AND m.winner_team = 'B' THEN 1

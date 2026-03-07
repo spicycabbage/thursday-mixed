@@ -68,10 +68,10 @@ export async function POST(req: Request) {
           m.team_b_p1,
           m.team_b_p2,
           p_main.id as player_id,
-          p_opp.name as opponent_name
+          TRIM(p_opp.name) as opponent_name
         FROM matches m
-        JOIN players p_main ON m.tournament_id = p_main.tournament_id AND p_main.name = ${playerName}
-        JOIN players p_opp ON m.tournament_id = p_opp.tournament_id AND p_opp.name != ${playerName}
+        JOIN players p_main ON m.tournament_id = p_main.tournament_id AND TRIM(p_main.name) = ${playerName.trim()}
+        JOIN players p_opp ON m.tournament_id = p_opp.tournament_id AND TRIM(p_opp.name) != ${playerName.trim()}
         WHERE m.tournament_id = ANY(${tournamentIds})
           AND m.completed = true 
           AND m.winner_team IS NOT NULL

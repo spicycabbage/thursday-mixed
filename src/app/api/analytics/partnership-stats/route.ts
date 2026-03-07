@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
       }
 
       const players = await sql<{ name: string }[]>`
-        SELECT DISTINCT name 
+        SELECT DISTINCT TRIM(name) as name
         FROM players 
         ORDER BY name ASC
       `;
@@ -60,10 +60,10 @@ export async function GET(request: NextRequest) {
           m.score_b,
           m.winner_team,
           CASE 
-            WHEN (p1.name = ${player1Name} AND p2.name = ${player2Name}) OR 
-                 (p1.name = ${player2Name} AND p2.name = ${player1Name}) THEN 'A'
-            WHEN (p3.name = ${player1Name} AND p4.name = ${player2Name}) OR 
-                 (p3.name = ${player2Name} AND p4.name = ${player1Name}) THEN 'B'
+            WHEN (TRIM(p1.name) = ${player1Name.trim()} AND TRIM(p2.name) = ${player2Name.trim()}) OR 
+                 (TRIM(p1.name) = ${player2Name.trim()} AND TRIM(p2.name) = ${player1Name.trim()}) THEN 'A'
+            WHEN (TRIM(p3.name) = ${player1Name.trim()} AND TRIM(p4.name) = ${player2Name.trim()}) OR 
+                 (TRIM(p3.name) = ${player2Name.trim()} AND TRIM(p4.name) = ${player1Name.trim()}) THEN 'B'
           END as team_position,
           t.date
         FROM matches m
@@ -74,10 +74,10 @@ export async function GET(request: NextRequest) {
         JOIN players p4 ON m.tournament_id = p4.tournament_id AND m.team_b_p2 = p4.id
         WHERE m.completed = true
           AND (
-            (p1.name = ${player1Name} AND p2.name = ${player2Name}) OR
-            (p1.name = ${player2Name} AND p2.name = ${player1Name}) OR
-            (p3.name = ${player1Name} AND p4.name = ${player2Name}) OR
-            (p3.name = ${player2Name} AND p4.name = ${player1Name})
+            (TRIM(p1.name) = ${player1Name.trim()} AND TRIM(p2.name) = ${player2Name.trim()}) OR
+            (TRIM(p1.name) = ${player2Name.trim()} AND TRIM(p2.name) = ${player1Name.trim()}) OR
+            (TRIM(p3.name) = ${player1Name.trim()} AND TRIM(p4.name) = ${player2Name.trim()}) OR
+            (TRIM(p3.name) = ${player2Name.trim()} AND TRIM(p4.name) = ${player1Name.trim()})
           )
         ORDER BY t.date DESC, m.round ASC
       `;
@@ -101,10 +101,10 @@ export async function GET(request: NextRequest) {
           m.score_b,
           m.winner_team,
           CASE 
-            WHEN (p1.name = ${player1Name} AND p2.name = ${player2Name}) OR 
-                 (p1.name = ${player2Name} AND p2.name = ${player1Name}) THEN 'A'
-            WHEN (p3.name = ${player1Name} AND p4.name = ${player2Name}) OR 
-                 (p3.name = ${player2Name} AND p4.name = ${player1Name}) THEN 'B'
+            WHEN (TRIM(p1.name) = ${player1Name.trim()} AND TRIM(p2.name) = ${player2Name.trim()}) OR 
+                 (TRIM(p1.name) = ${player2Name.trim()} AND TRIM(p2.name) = ${player1Name.trim()}) THEN 'A'
+            WHEN (TRIM(p3.name) = ${player1Name.trim()} AND TRIM(p4.name) = ${player2Name.trim()}) OR 
+                 (TRIM(p3.name) = ${player2Name.trim()} AND TRIM(p4.name) = ${player1Name.trim()}) THEN 'B'
           END as team_position,
           t.date
         FROM matches m
@@ -116,10 +116,10 @@ export async function GET(request: NextRequest) {
         WHERE m.completed = true
           AND EXTRACT(YEAR FROM t.date::date) = ${yearInt}
           AND (
-            (p1.name = ${player1Name} AND p2.name = ${player2Name}) OR
-            (p1.name = ${player2Name} AND p2.name = ${player1Name}) OR
-            (p3.name = ${player1Name} AND p4.name = ${player2Name}) OR
-            (p3.name = ${player2Name} AND p4.name = ${player1Name})
+            (TRIM(p1.name) = ${player1Name.trim()} AND TRIM(p2.name) = ${player2Name.trim()}) OR
+            (TRIM(p1.name) = ${player2Name.trim()} AND TRIM(p2.name) = ${player1Name.trim()}) OR
+            (TRIM(p3.name) = ${player1Name.trim()} AND TRIM(p4.name) = ${player2Name.trim()}) OR
+            (TRIM(p3.name) = ${player2Name.trim()} AND TRIM(p4.name) = ${player1Name.trim()})
           )
         ORDER BY t.date DESC, m.round ASC
       `;
