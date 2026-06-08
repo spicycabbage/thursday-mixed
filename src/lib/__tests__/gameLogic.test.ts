@@ -1,31 +1,44 @@
-import { 
-  createTournament, 
-  validateScore, 
-  updateMatchScore, 
+import {
+  createTournament,
+  validateScore,
+  updateMatchScore,
+  getRankedTeams,
   getRankedPlayers,
   isTournamentComplete,
-  ROUND_MATCHUPS 
+  ROUND_MATCHUPS,
+  NUM_TEAMS,
+  NUM_MATCHES,
+  NUM_ROUNDS,
+  getWinnerTeam,
 } from '../gameLogic';
 
-describe('Game Logic', () => {
-  const playerNames = ['Alice', 'Bob', 'Charlie', 'David', 'Eve', 'Frank', 'Grace', 'Henry'];
+const sampleTeams = [
+  { player1: 'Alice', player2: 'Amy' },
+  { player1: 'Bob', player2: 'Ben' },
+  { player1: 'Charlie', player2: 'Chris' },
+  { player1: 'David', player2: 'Dan' },
+  { player1: 'Eve', player2: 'Emma' },
+  { player1: 'Frank', player2: 'Fred' },
+];
 
+describe('Game Logic', () => {
   describe('createTournament', () => {
-    it('should create a tournament with 8 players and 14 matches', () => {
-      const tournament = createTournament('123', playerNames);
-      
-      expect(tournament.players).toHaveLength(8);
-      expect(tournament.matches).toHaveLength(14); // 7 rounds × 2 matches
+    it('should create a tournament with 6 teams, 12 players, and 15 matches', () => {
+      const tournament = createTournament(sampleTeams);
+
+      expect(tournament.teams).toHaveLength(NUM_TEAMS);
+      expect(tournament.players).toHaveLength(12);
+      expect(tournament.matches).toHaveLength(NUM_MATCHES);
       expect(tournament.currentRound).toBe(1);
-      expect(tournament.accessCode).toBe('123');
     });
 
-    it('should initialize all player scores to 0', () => {
-      const tournament = createTournament('123', playerNames);
-      
-      tournament.players.forEach(player => {
-        expect(player.scores).toEqual([0, 0, 0, 0, 0, 0, 0]);
-        expect(player.totalScore).toBe(0);
+    it('should initialize all stats to 0', () => {
+      const tournament = createTournament(sampleTeams);
+
+      tournament.teams.forEach((team) => {
+        expect(team.wins).toBe(0);
+        expect(team.losses).toBe(0);
+        expect(team.pointDiff).toBe(0);
       });
     });
   });
@@ -34,119 +47,112 @@ describe('Game Logic', () => {
     it('should accept valid scores', () => {
       expect(validateScore(21, 15)).toBe(true);
       expect(validateScore(10, 21)).toBe(true);
-      expect(validateScore(21, 0)).toBe(true);
-      expect(validateScore(0, 21)).toBe(true);
+      expect(validateScore(22, 20)).toBe(true);
+      expect(validateScore(30, 29)).toBe(true);
+      expect(validateScore(30, 28)).toBe(true);
+      expect(validateScore(29, 30)).toBe(true);
+      expect(validateScore(28, 26)).toBe(true);
     });
 
     it('should reject invalid scores', () => {
       expect(validateScore(20, 19)).toBe(false);
       expect(validateScore(21, 21)).toBe(false);
-      expect(validateScore(22, 15)).toBe(false);
-      expect(validateScore(15, 22)).toBe(false);
+      expect(validateScore(22, 21)).toBe(false);
+      expect(validateScore(28, 0)).toBe(false);
+      expect(validateScore(28, 14)).toBe(false);
+      expect(validateScore(30, 30)).toBe(false);
       expect(validateScore(-1, 21)).toBe(false);
+    });
+
+    it('should accept minimum winning scores only', () => {
+      expect(validateScore(21, 0)).toBe(true);
+      expect(validateScore(21, 14)).toBe(true);
+      expect(validateScore(28, 26)).toBe(true);
+    });
+  });
+
+  describe('getWinnerTeam', () => {
+    it('should return correct winner', () => {
+      expect(getWinnerTeam(21, 15)).toBe('A');
+      expect(getWinnerTeam(15, 21)).toBe('B');
+      expect(getWinnerTeam(30, 29)).toBe('A');
     });
   });
 
   describe('updateMatchScore', () => {
-    it('should update player scores correctly', () => {
-      const tournament = createTournament('123', playerNames);
+    it('should update team and player W/L records', () => {
+      const tournament = createTournament(sampleTeams);
       const firstMatch = tournament.matches[0];
-      
-      const updatedTournament = updateMatchScore(tournament, firstMatch.id, 21, 15);
-      
-      // Check that the match was updated
-      const updatedMatch = updatedTournament.matches[0];
-      expect(updatedMatch.scoreA).toBe(21);
-      expect(updatedMatch.scoreB).toBe(15);
-      expect(updatedMatch.completed).toBe(true);
-      
-      // Check that player scores were updated
-      const player1 = updatedTournament.players.find(p => p.id === firstMatch.teamA.player1);
-      const player2 = updatedTournament.players.find(p => p.id === firstMatch.teamA.player2);
-      const player3 = updatedTournament.players.find(p => p.id === firstMatch.teamB.player1);
-      const player4 = updatedTournament.players.find(p => p.id === firstMatch.teamB.player2);
-      
-      expect(player1?.scores[0]).toBe(21);
-      expect(player2?.scores[0]).toBe(21);
-      expect(player3?.scores[0]).toBe(15);
-      expect(player4?.scores[0]).toBe(15);
+
+      const updated = updateMatchScore(tournament, firstMatch.id, 21, 15);
+
+      const teamA = updated.teams.find((t) => t.id === firstMatch.teamAId);
+      const teamB = updated.teams.find((t) => t.id === firstMatch.teamBId);
+      expect(teamA?.wins).toBe(1);
+      expect(teamA?.losses).toBe(0);
+      expect(teamB?.wins).toBe(0);
+      expect(teamB?.losses).toBe(1);
+      expect(teamA?.pointDiff).toBe(6);
+    });
+  });
+
+  describe('getRankedTeams', () => {
+    it('should rank teams by wins then point diff', () => {
+      const tournament = createTournament(sampleTeams);
+      tournament.teams[0].wins = 4;
+      tournament.teams[0].pointDiff = 20;
+      tournament.teams[1].wins = 4;
+      tournament.teams[1].pointDiff = 10;
+      tournament.teams[2].wins = 3;
+      tournament.teams[2].pointDiff = 30;
+
+      const ranked = getRankedTeams(tournament);
+      expect(ranked[0].id).toBe(1);
+      expect(ranked[1].id).toBe(2);
+      expect(ranked[2].id).toBe(3);
     });
   });
 
   describe('getRankedPlayers', () => {
-    it('should rank players by total score', () => {
-      const tournament = createTournament('123', playerNames);
-      
-      // Manually set some scores
-      tournament.players[0].scores = [21, 21, 15, 10, 21, 18, 12];
-      tournament.players[0].totalScore = 118;
-      tournament.players[1].scores = [15, 18, 21, 21, 15, 21, 21];
-      tournament.players[1].totalScore = 132;
-      
-      const ranked = getRankedPlayers(tournament);
-      
-      expect(ranked[0].name).toBe('Bob'); // Higher score
-      expect(ranked[1].name).toBe('Alice'); // Lower score
-    });
+    it('should rank players by wins then point diff', () => {
+      const tournament = createTournament(sampleTeams);
+      tournament.players[0].wins = 5;
+      tournament.players[0].pointDiff = 15;
+      tournament.players[1].wins = 4;
+      tournament.players[1].pointDiff = 20;
 
-    it('should handle ties correctly', () => {
-      const tournament = createTournament('123', playerNames);
-      
-      // Set up tie scenario: -4, -4, -8 (from max score of 147)
-      tournament.players[0].totalScore = 143; // -4 from 147
-      tournament.players[1].totalScore = 143; // -4 from 147 (tie for 1st)
-      tournament.players[2].totalScore = 139; // -8 from 147 (3rd place)
-      tournament.players[3].totalScore = 135; // -12 from 147 (4th place)
-      tournament.players[4].totalScore = 135; // -12 from 147 (tie for 4th)
-      tournament.players[5].totalScore = 130; // -17 from 147 (6th place)
-      tournament.players[6].totalScore = 125; // -22 from 147 (7th place)
-      tournament.players[7].totalScore = 120; // -27 from 147 (8th place)
-      
       const ranked = getRankedPlayers(tournament);
-      
-      // Check tied players get same rank
-      expect(ranked[0].rank).toBe(1); // First player with score 143
-      expect(ranked[1].rank).toBe(1); // Second player with score 143 (tied for 1st)
-      expect(ranked[2].rank).toBe(3); // Player with score 139 (3rd place, skipping 2nd)
-      expect(ranked[3].rank).toBe(4); // First player with score 135
-      expect(ranked[4].rank).toBe(4); // Second player with score 135 (tied for 4th)
-      expect(ranked[5].rank).toBe(6); // Player with score 130 (6th place, skipping 5th)
-      expect(ranked[6].rank).toBe(7); // Player with score 125
-      expect(ranked[7].rank).toBe(8); // Player with score 120
-      
-      // Verify scores are sorted correctly
-      expect(ranked[0].totalScore).toBe(143);
-      expect(ranked[1].totalScore).toBe(143);
-      expect(ranked[2].totalScore).toBe(139);
+      expect(ranked[0].id).toBe(1);
+      expect(ranked[1].id).toBe(2);
     });
   });
 
   describe('ROUND_MATCHUPS', () => {
-    it('should have 7 rounds with 2 matches each', () => {
-      expect(ROUND_MATCHUPS).toHaveLength(7);
-      ROUND_MATCHUPS.forEach(round => {
-        expect(round).toHaveLength(2);
-      });
+    it('should have 8 rounds with 15 total matches', () => {
+      expect(ROUND_MATCHUPS).toHaveLength(NUM_ROUNDS);
+      const total = ROUND_MATCHUPS.reduce((sum, r) => sum + r.length, 0);
+      expect(total).toBe(NUM_MATCHES);
     });
 
-    it('should ensure each player partners with every other player exactly once', () => {
-      const partnerships: Set<string> = new Set();
-      
-      ROUND_MATCHUPS.forEach(round => {
-        round.forEach(match => {
-          const teamA = match.teamA.sort().join('-');
-          const teamB = match.teamB.sort().join('-');
-          
-          expect(partnerships.has(teamA)).toBe(false);
-          expect(partnerships.has(teamB)).toBe(false);
-          
-          partnerships.add(teamA);
-          partnerships.add(teamB);
+    it('should ensure each team pair plays exactly once', () => {
+      const pairings = new Set();
+
+      ROUND_MATCHUPS.forEach((round) => {
+        round.forEach((match) => {
+          const key = [match.teamA, match.teamB].sort().join('-');
+          expect(pairings.has(key)).toBe(false);
+          pairings.add(key);
         });
       });
-      
-      // Should have exactly 28 unique partnerships (8 choose 2)
-      expect(partnerships.size).toBe(28);
+
+      expect(pairings.size).toBe(15);
+    });
+  });
+
+  describe('isTournamentComplete', () => {
+    it('should return false when matches incomplete', () => {
+      const tournament = createTournament(sampleTeams);
+      expect(isTournamentComplete(tournament)).toBe(false);
     });
   });
 });

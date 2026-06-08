@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "jest"
+    "generate-icons": "node scripts/generate-pwa-icons.mjs",
+    "test": "jest",
+    "socket": "node socket-server.js"
   },
   "keywords": [
     "badminton",
@@ -22,9 +24,11 @@
   "dependencies": {
     "@heroicons/react": "^2.0.0",
     "@neondatabase/serverless": "^0.9.3",
+    "@supabase/supabase-js": "^2.107.0",
     "@types/socket.io": "^3.0.2",
     "next": "^16.1.1",
     "next-pwa": "^5.6.0",
+    "postgres": "^3.4.9",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "socket.io": "^4.7.0",
@@ -42,6 +46,7 @@
     "eslint-config-next": "^15.0.0",
     "jest": "^29.0.0",
     "postcss": "^8.4.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.0.0"
   }

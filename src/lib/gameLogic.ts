@@ -1,14 +1,42 @@
+export const TEAM_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'] as const;
+export const NUM_TEAMS = 6;
+export const NUM_PLAYERS = 12;
+export const NUM_ROUNDS = 8;
+export const NUM_MATCHES = 15;
+
+export type TeamLabel = (typeof TEAM_LABELS)[number];
+
 export interface Player {
   id: number;
   name: string;
-  scores: number[];
-  totalScore: number;
-  rank?: number; // Optional rank property for ranked players
+  teamId: number;
+  wins: number;
+  losses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  pointDiff: number;
+  rank?: number;
+}
+
+export interface Team {
+  id: number;
+  label: TeamLabel;
+  player1Id: number;
+  player2Id: number;
+  wins: number;
+  losses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  pointDiff: number;
+  rank?: number;
 }
 
 export interface Match {
   id: number;
   round: number;
+  court: number;
+  teamAId: number;
+  teamBId: number;
   teamA: { player1: number; player2: number };
   teamB: { player1: number; player2: number };
   scoreA: number | null;
@@ -19,8 +47,8 @@ export interface Match {
 
 export interface Tournament {
   id: string;
-  accessCode: string;
   date: string;
+  teams: Team[];
   players: Player[];
   matches: Match[];
   currentRound: number;
@@ -28,195 +56,324 @@ export interface Tournament {
   createdAt: Date;
 }
 
-// Game logic based on the provided chart
-export const ROUND_MATCHUPS = [
-  // Round 1
-  [
-    { teamA: [8, 1], teamB: [2, 6] },
-    { teamA: [7, 5], teamB: [3, 4] }
-  ],
-  // Round 2
-  [
-    { teamA: [8, 2], teamB: [3, 7] },
-    { teamA: [1, 6], teamB: [4, 5] }
-  ],
-  // Round 3
-  [
-    { teamA: [8, 3], teamB: [4, 1] },
-    { teamA: [2, 7], teamB: [5, 6] }
-  ],
-  // Round 4
-  [
-    { teamA: [8, 4], teamB: [5, 2] },
-    { teamA: [3, 1], teamB: [6, 7] }
-  ],
-  // Round 5
-  [
-    { teamA: [8, 5], teamB: [6, 3] },
-    { teamA: [4, 2], teamB: [7, 1] }
-  ],
-  // Round 6
-  [
-    { teamA: [8, 6], teamB: [7, 4] },
-    { teamA: [5, 3], teamB: [1, 2] }
-  ],
-  // Round 7
-  [
-    { teamA: [8, 7], teamB: [1, 5] },
-    { teamA: [6, 4], teamB: [2, 3] }
-  ]
+export interface TeamRegistration {
+  player1: string;
+  player2: string;
+}
+
+// 6-team round robin: 15 matches across 8 rounds (2 courts)
+export const ROUND_MATCHUPS: { teamA: number; teamB: number; court: number }[][] = [
+  // Round 1: A-F, B-E
+  [{ teamA: 1, teamB: 6, court: 1 }, { teamA: 2, teamB: 5, court: 2 }],
+  // Round 2: C-D, A-E
+  [{ teamA: 3, teamB: 4, court: 1 }, { teamA: 1, teamB: 5, court: 2 }],
+  // Round 3: B-F, C-A
+  [{ teamA: 2, teamB: 6, court: 1 }, { teamA: 3, teamB: 1, court: 2 }],
+  // Round 4: D-E, B-C
+  [{ teamA: 4, teamB: 5, court: 1 }, { teamA: 2, teamB: 3, court: 2 }],
+  // Round 5: A-D, F-E
+  [{ teamA: 1, teamB: 4, court: 1 }, { teamA: 6, teamB: 5, court: 2 }],
+  // Round 6: B-D, C-F
+  [{ teamA: 2, teamB: 4, court: 1 }, { teamA: 3, teamB: 6, court: 2 }],
+  // Round 7: A-B, D-F
+  [{ teamA: 1, teamB: 2, court: 1 }, { teamA: 4, teamB: 6, court: 2 }],
+  // Round 8: C-E
+  [{ teamA: 3, teamB: 5, court: 1 }],
 ];
 
 export const DEFAULT_PLAYER_NAMES = [
   'Jason', 'JasonNg', 'Mike', 'Kim', 'Alex', 'Ray', 'Steven', 'Josh',
   'Justin', 'Stevie', 'Eddie', 'Yorkie', 'Tonny', 'Wilson', 'Victor',
-  'Ian', 'Trevor', 'Jim', 'Peter', 'Ben', 'Andrew', 'Dan', 'Yves', 'Brian', 'Stan', 'Chi Ho'
+  'Ian', 'Trevor', 'Jim', 'Peter', 'Ben', 'Andrew', 'Dan', 'Yves', 'Brian', 'Stan', 'Chi Ho',
 ];
 
-/**
- * Normalizes a player name by trimming whitespace
- */
 export function normalizeName(name: string): string {
   return name.trim();
 }
 
-export function createTournament(accessCode: string, playerNames: string[], date?: string): Tournament {
-  const players: Player[] = playerNames.map((name, index) => ({
-    id: index + 1,
-    name: normalizeName(name),
-    scores: new Array(7).fill(0),
-    totalScore: 0
-  }));
+export function getTeamLabel(teamId: number): TeamLabel {
+  return TEAM_LABELS[teamId - 1] ?? 'A';
+}
+
+export function getPlayerIdsForTeam(teamId: number): [number, number] {
+  const base = (teamId - 1) * 2;
+  return [base + 1, base + 2];
+}
+
+export function getTeamIdForPlayer(playerId: number): number {
+  return Math.ceil(playerId / 2);
+}
+
+export function getWinnerTeam(scoreA: number, scoreB: number): 'A' | 'B' {
+  return scoreA > scoreB ? 'A' : 'B';
+}
+
+export function validateScore(scoreA: number, scoreB: number): boolean {
+  if (scoreA < 0 || scoreB < 0 || scoreA > 30 || scoreB > 30) return false;
+  if (scoreA === scoreB) return false;
+
+  const [winner, loser] = scoreA > scoreB ? [scoreA, scoreB] : [scoreB, scoreA];
+
+  // Cap at 30: game ends immediately (30-28, 30-29, etc.)
+  if (winner === 30) return loser < 30;
+
+  // Below cap: first to 21+ with 2-point lead; game ends at minimum winning score
+  if (winner < 21 || winner - loser < 2) return false;
+
+  const minWinner = Math.max(21, loser + 2);
+  return winner === minWinner;
+}
+
+export function createTournament(
+  teamRegistrations: TeamRegistration[],
+  date?: string
+): Tournament {
+  const teams: Team[] = teamRegistrations.map((reg, index) => {
+    const teamId = index + 1;
+    const [p1, p2] = getPlayerIdsForTeam(teamId);
+    return {
+      id: teamId,
+      label: getTeamLabel(teamId),
+      player1Id: p1,
+      player2Id: p2,
+      wins: 0,
+      losses: 0,
+      pointsFor: 0,
+      pointsAgainst: 0,
+      pointDiff: 0,
+    };
+  });
+
+  const players: Player[] = teamRegistrations.flatMap((reg, index) => {
+    const teamId = index + 1;
+    const [p1, p2] = getPlayerIdsForTeam(teamId);
+    return [
+      {
+        id: p1,
+        name: normalizeName(reg.player1),
+        teamId,
+        wins: 0,
+        losses: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        pointDiff: 0,
+      },
+      {
+        id: p2,
+        name: normalizeName(reg.player2),
+        teamId,
+        wins: 0,
+        losses: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        pointDiff: 0,
+      },
+    ];
+  });
 
   const matches: Match[] = [];
   let matchId = 1;
 
   ROUND_MATCHUPS.forEach((roundMatches, roundIndex) => {
     roundMatches.forEach((matchup) => {
+      const [aP1, aP2] = getPlayerIdsForTeam(matchup.teamA);
+      const [bP1, bP2] = getPlayerIdsForTeam(matchup.teamB);
       matches.push({
         id: matchId++,
         round: roundIndex + 1,
-        teamA: { 
-          player1: matchup.teamA[0], 
-          player2: matchup.teamA[1] 
-        },
-        teamB: { 
-          player1: matchup.teamB[0], 
-          player2: matchup.teamB[1] 
-        },
+        court: matchup.court,
+        teamAId: matchup.teamA,
+        teamBId: matchup.teamB,
+        teamA: { player1: aP1, player2: aP2 },
+        teamB: { player1: bP1, player2: bP2 },
         scoreA: null,
         scoreB: null,
         completed: false,
-        winnerTeam: null
+        winnerTeam: null,
       });
     });
   });
 
   return {
     id: generateTournamentId(),
-    accessCode,
-    // Use provided date or default to today in PST
-    date: date || (() => {
-      const now = new Date();
-      // en-CA yields YYYY-MM-DD; force PST
-      const fmt = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/Los_Angeles',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-      return fmt.format(now);
-    })(),
+    date:
+      date ||
+      (() => {
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        return fmt.format(new Date());
+      })(),
+    teams,
     players,
     matches,
     currentRound: 1,
     isFinalized: false,
-    createdAt: new Date()
+    createdAt: new Date(),
   };
 }
 
-export function validateScore(scoreA: number, scoreB: number): boolean {
-  // One team must get exactly 21, the other must be less than 21
-  if (scoreA < 0 || scoreB < 0 || scoreA > 21 || scoreB > 21) return false;
-  if (scoreA === 21 && scoreB < 21) return true;
-  if (scoreB === 21 && scoreA < 21) return true;
-  return false;
+function applyMatchStats(
+  tournament: Tournament,
+  match: Match,
+  scoreA: number,
+  scoreB: number
+): void {
+  const winner = getWinnerTeam(scoreA, scoreB);
+  match.scoreA = scoreA;
+  match.scoreB = scoreB;
+  match.completed = true;
+  match.winnerTeam = winner;
+
+  const teamA = tournament.teams.find((t) => t.id === match.teamAId);
+  const teamB = tournament.teams.find((t) => t.id === match.teamBId);
+
+  if (teamA) {
+    teamA.pointsFor += scoreA;
+    teamA.pointsAgainst += scoreB;
+    if (winner === 'A') teamA.wins += 1;
+    else teamA.losses += 1;
+    teamA.pointDiff = teamA.pointsFor - teamA.pointsAgainst;
+  }
+
+  if (teamB) {
+    teamB.pointsFor += scoreB;
+    teamB.pointsAgainst += scoreA;
+    if (winner === 'B') teamB.wins += 1;
+    else teamB.losses += 1;
+    teamB.pointDiff = teamB.pointsFor - teamB.pointsAgainst;
+  }
+
+  const updatePlayers = (playerIds: [number, number], forScore: number, againstScore: number, won: boolean) => {
+    for (const pid of playerIds) {
+      const player = tournament.players.find((p) => p.id === pid);
+      if (!player) continue;
+      player.pointsFor += forScore;
+      player.pointsAgainst += againstScore;
+      player.pointDiff = player.pointsFor - player.pointsAgainst;
+      if (won) player.wins += 1;
+      else player.losses += 1;
+    }
+  };
+
+  updatePlayers([match.teamA.player1, match.teamA.player2], scoreA, scoreB, winner === 'A');
+  updatePlayers([match.teamB.player1, match.teamB.player2], scoreB, scoreA, winner === 'B');
+}
+
+function recomputeAllStats(tournament: Tournament, pendingMatch?: { id: number; scoreA: number; scoreB: number }): void {
+  tournament.teams.forEach((t) => {
+    t.wins = 0;
+    t.losses = 0;
+    t.pointsFor = 0;
+    t.pointsAgainst = 0;
+    t.pointDiff = 0;
+  });
+  tournament.players.forEach((p) => {
+    p.wins = 0;
+    p.losses = 0;
+    p.pointsFor = 0;
+    p.pointsAgainst = 0;
+    p.pointDiff = 0;
+  });
+
+  for (const m of tournament.matches) {
+    const scores =
+      pendingMatch && m.id === pendingMatch.id
+        ? { scoreA: pendingMatch.scoreA, scoreB: pendingMatch.scoreB }
+        : m.completed && m.scoreA != null && m.scoreB != null
+          ? { scoreA: m.scoreA, scoreB: m.scoreB }
+          : null;
+    if (scores) {
+      applyMatchStats(tournament, m, scores.scoreA, scores.scoreB);
+    }
+  }
 }
 
 export function updateMatchScore(
-  tournament: Tournament, 
-  matchId: number, 
-  scoreA: number, 
+  tournament: Tournament,
+  matchId: number,
+  scoreA: number,
   scoreB: number,
   isEdit: boolean = false
 ): Tournament {
-  const updatedTournament = { ...tournament };
-  const match = updatedTournament.matches.find(m => m.id === matchId);
-  
+  const updatedTournament: Tournament = {
+    ...tournament,
+    teams: tournament.teams.map((t) => ({ ...t })),
+    players: tournament.players.map((p) => ({ ...p })),
+    matches: tournament.matches.map((m) => ({ ...m })),
+  };
+
+  const match = updatedTournament.matches.find((m) => m.id === matchId);
   if (!match || !validateScore(scoreA, scoreB)) {
     return tournament;
   }
 
-  // Update match scores
-  match.scoreA = scoreA;
-  match.scoreB = scoreB;
-  match.completed = true;
-  match.winnerTeam = scoreA === 21 ? 'A' : 'B';
+  recomputeAllStats(updatedTournament, { id: matchId, scoreA, scoreB });
 
-  // Update player scores
-  const roundIndex = match.round - 1;
-  
-  // Team A players get scoreA
-  const playerA1 = updatedTournament.players.find(p => p.id === match.teamA.player1);
-  const playerA2 = updatedTournament.players.find(p => p.id === match.teamA.player2);
-  if (playerA1) playerA1.scores[roundIndex] = scoreA;
-  if (playerA2) playerA2.scores[roundIndex] = scoreA;
-
-  // Team B players get scoreB  
-  const playerB1 = updatedTournament.players.find(p => p.id === match.teamB.player1);
-  const playerB2 = updatedTournament.players.find(p => p.id === match.teamB.player2);
-  if (playerB1) playerB1.scores[roundIndex] = scoreB;
-  if (playerB2) playerB2.scores[roundIndex] = scoreB;
-
-  // Only advance current round if this is NOT an edit
   if (!isEdit) {
-    // Check if round is completed
-    const roundMatches = updatedTournament.matches.filter(m => m.round === match.round);
-    const roundCompleted = roundMatches.every(m => m.completed);
-
-    if (roundCompleted && match.round < 7) {
+    const roundMatches = updatedTournament.matches.filter((m) => m.round === match.round);
+    const roundCompleted = roundMatches.every((m) => m.completed);
+    if (roundCompleted && match.round < NUM_ROUNDS) {
       updatedTournament.currentRound = match.round + 1;
     }
   }
 
-  // Update total scores
-  updatedTournament.players.forEach(player => {
-    player.totalScore = player.scores.reduce((sum, score) => sum + score, 0);
-  });
-
   return updatedTournament;
 }
 
-export function getRankedPlayers(tournament: Tournament): Player[] {
-  const sortedPlayers = [...tournament.players]
-    .sort((a, b) => b.totalScore - a.totalScore);
-  
-  // Handle ties properly
-  const rankedPlayers: Player[] = [];
-  
-  for (let i = 0; i < sortedPlayers.length; i++) {
-    const player = sortedPlayers[i];
-    
-    // If this player has the same score as the previous player, use the same rank
-    if (i > 0 && sortedPlayers[i - 1].totalScore === player.totalScore) {
-      rankedPlayers.push({ ...player, rank: rankedPlayers[i - 1].rank });
+export function getRankedTeams(tournament: Tournament): Team[] {
+  const sorted = [...tournament.teams].sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return b.pointDiff - a.pointDiff;
+  });
+
+  const ranked: Team[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const team = sorted[i];
+    if (
+      i > 0 &&
+      sorted[i - 1].wins === team.wins &&
+      sorted[i - 1].pointDiff === team.pointDiff
+    ) {
+      ranked.push({ ...team, rank: ranked[i - 1].rank });
     } else {
-      // New score, assign rank based on position (1-based)
-      rankedPlayers.push({ ...player, rank: i + 1 });
+      ranked.push({ ...team, rank: i + 1 });
     }
   }
-  
-  return rankedPlayers;
+  return ranked;
+}
+
+export function getRankedPlayers(tournament: Tournament): Player[] {
+  const sorted = [...tournament.players].sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return b.pointDiff - a.pointDiff;
+  });
+
+  const ranked: Player[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const player = sorted[i];
+    if (
+      i > 0 &&
+      sorted[i - 1].wins === player.wins &&
+      sorted[i - 1].pointDiff === player.pointDiff
+    ) {
+      ranked.push({ ...player, rank: ranked[i - 1].rank });
+    } else {
+      ranked.push({ ...player, rank: i + 1 });
+    }
+  }
+  return ranked;
+}
+
+export function getTeamDisplayName(tournament: Tournament, teamId: number): string {
+  const team = tournament.teams.find((t) => t.id === teamId);
+  if (!team) return `Team ${getTeamLabel(teamId)}`;
+  const p1 = tournament.players.find((p) => p.id === team.player1Id)?.name ?? '';
+  const p2 = tournament.players.find((p) => p.id === team.player2Id)?.name ?? '';
+  return `Team ${team.label}: ${p1} & ${p2}`;
 }
 
 export function generateTournamentId(): string {
@@ -224,5 +381,5 @@ export function generateTournamentId(): string {
 }
 
 export function isTournamentComplete(tournament: Tournament): boolean {
-  return tournament.matches.every(match => match.completed);
+  return tournament.matches.every((match) => match.completed);
 }

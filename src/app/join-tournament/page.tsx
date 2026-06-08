@@ -1,209 +1,91 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSocket } from '@/lib/socket';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeftIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { UserGroupIcon } from '@heroicons/react/24/outline';
+import { AppLinkButton, PageCard, PageContent, PageHeader, PageShell, PageTitleBlock } from '@/components/PageShell';
 
 export default function JoinTournamentPage() {
   const router = useRouter();
-  const [accessCode, setAccessCode] = useState('123');
-  const [activeTournamentId, setActiveTournamentId] = useState<string | null>(null);
-  const [activeAccessCode, setActiveAccessCode] = useState<string | null>(null);
-  const [hasEditedCode, setHasEditedCode] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    let ignore = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/tournaments/active?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!data?.active || !data?.tournament) return;
-        if (ignore) return;
-        setActiveTournamentId(data.tournament.id);
-        setActiveAccessCode(data.tournament.access_code);
-        if (!hasEditedCode && data.tournament.access_code) {
-          setAccessCode(data.tournament.access_code);
-        }
-      } catch {}
-    })();
-    return () => { ignore = true; };
-  }, [hasEditedCode]);
-
-  const handleJoinTournament = async () => {
+  const joinActiveTournament = async () => {
     setLoading(true);
     setError('');
 
     try {
-      // Pre-wake the Render free instance (no-cors to avoid CORS blocking)
-      try {
-        const pingUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
-        if (pingUrl) {
-          fetch(pingUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {});
-        }
-      } catch {}
+      const res = await fetch(`/api/tournaments/active?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to check active tournament');
+      const data = await res.json();
 
-      const socket = getSocket();
-
-      const timeoutId = setTimeout(() => {
-        setError("There are no active tournament. Why don't you create one?");
+      if (!data?.active || !data?.tournament?.id) {
+        setError("There is no active tournament. Why don't you create one?");
         setLoading(false);
-      }, 8000);
-
-      socket.once('tournament:sync', (serverTournament: any) => {
-        if (!serverTournament || serverTournament.accessCode !== accessCode) {
-          return;
-        }
-        clearTimeout(timeoutId);
-        try { localStorage.setItem('currentTournament', JSON.stringify(serverTournament)); } catch {}
-        router.push(`/tournament/${serverTournament.id}`);
-      });
-
-      socket.once('join:error', (payload: any) => {
-        clearTimeout(timeoutId);
-        if (payload?.reason === 'finalized') {
-          setError("There are no active tournament. Why don't you create one?");
-        } else {
-          setError('Unable to join this tournament right now.');
-        }
-        setLoading(false);
-      });
-
-      // If active tournament is known and code matches, join directly via API
-      if (activeTournamentId && activeAccessCode && accessCode === activeAccessCode) {
-        try {
-          const activeRes = await fetch(
-            `/api/tournaments/${encodeURIComponent(activeTournamentId)}?t=${Date.now()}`,
-            { cache: 'no-store' }
-          );
-          if (activeRes.ok) {
-            const t = await activeRes.json();
-            clearTimeout(timeoutId);
-            try { localStorage.setItem('currentTournament', JSON.stringify(t)); } catch {}
-            router.push(`/tournament/${t.id}`);
-            return;
-          }
-        } catch {}
+        return;
       }
 
-      // Also try API path to find active by code in case socket memory was reset
-      try {
-        const apiRes = await fetch(
-          `/api/tournaments/by-code/${encodeURIComponent(accessCode)}?t=${Date.now()}`,
-          { cache: 'no-store' }
-        );
-        if (apiRes.ok) {
-          const t = await apiRes.json();
-          clearTimeout(timeoutId);
-          try { localStorage.setItem('currentTournament', JSON.stringify(t)); } catch {}
-          router.push(`/tournament/${t.id}`);
-          return;
-        }
-        if (apiRes.status === 404) {
-          clearTimeout(timeoutId);
-          setError('No active tournament found for that access code.');
-          setLoading(false);
-          return;
-        }
-      } catch {}
+      const tournamentId = data.tournament.id;
+      const tournamentRes = await fetch(
+        `/api/tournaments/${encodeURIComponent(tournamentId)}?t=${Date.now()}`,
+        { cache: 'no-store' }
+      );
 
-      socket.emit('join-tournament', accessCode);
-    } catch (err) {
-      setError('Real-time server unavailable. Please try again in a moment.');
+      if (tournamentRes.ok) {
+        const t = await tournamentRes.json();
+        try {
+          localStorage.setItem('currentTournament', JSON.stringify(t));
+        } catch {}
+        router.push(`/tournament/${tournamentId}`);
+        return;
+      }
+
+      setError('Unable to load the active tournament.');
+      setLoading(false);
+    } catch {
+      setError('Unable to join right now. Please try again.');
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    joinActiveTournament();
+  }, []);
+
   return (
-    <div className="mobile-container bg-blue-600 min-h-screen safe-area-inset-top safe-area-inset-bottom">
-      {/* Header */}
-      <div className="bg-white mx-[4%] mt-[4%] rounded-t-xl px-4 py-3 flex items-center">
-        <Link href="/" className="flex items-center text-gray-600 hover:text-gray-800">
-          <ChevronLeftIcon className="w-5 h-5 mr-1" />
-          <UserGroupIcon className="w-5 h-5 mr-2" />
-          <span className="font-semibold">Join Tournament</span>
-        </Link>
-      </div>
+    <PageShell>
+      <PageCard>
+        <PageHeader
+          title="Join Tournament"
+          icon={<UserGroupIcon className="w-5 h-5" />}
+        />
 
-      {/* Join Form */}
-      <div className="bg-white mx-[4%] mb-[4%] rounded-b-xl p-6">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">
-            Join Existing Tournament
-          </h1>
-          <p className="text-gray-600 text-sm">
-            Enter the access code to join and get real-time updates
-          </p>
-        </div>
+        <PageContent>
+          <PageTitleBlock
+            title="Joining Tournament"
+            subtitle={loading ? 'Loading the active tournament...' : 'Connect to the current tournament'}
+          />
 
-        <div className="space-y-6">
-          {/* Access Code Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Tournament Access Code
-            </label>
-            <input
-              type="text"
-              value={accessCode}
-              onChange={(e) => {
-                setHasEditedCode(true);
-                setAccessCode(e.target.value.trim());
-              }}
-              placeholder="Enter access code"
-              className="w-full px-4 py-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center font-mono text-lg"
-              maxLength={6}
-              autoFocus
-            />
-            <p className="text-xs text-gray-500 mt-1 text-center">
-              Make sure this matches the organizer’s access code.
-            </p>
-          </div>
-
-          {/* Error Message */}
           {error && (
-            <div className="p-4 bg-red-100 border border-red-400 rounded-lg text-red-700 text-sm">
+            <div className="app-alert-error mb-6">
               <p className="font-semibold">Unable to join tournament</p>
               <p>{error}</p>
             </div>
           )}
 
-          {/* Join Button */}
-          <button
-            onClick={handleJoinTournament}
-            disabled={loading || !accessCode.trim()}
-            className={`w-full py-4 rounded-lg font-semibold text-lg transition-colors ${
-              loading || !accessCode.trim()
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-500 text-white hover:bg-blue-600'
-            }`}
-          >
-            {loading ? 'Joining Tournament...' : 'Join Tournament'}
-          </button>
-
-          {/* Help Text */}
-          <div className="text-center text-sm text-gray-600">
-            <p className="mb-2">Don&apos;t have an access code?</p>
-            <Link href="/create-tournament" className="text-blue-600 underline font-medium">
-              Create a new tournament instead
-            </Link>
-          </div>
-        </div>
-
-        {/* Info Section */}
-        <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-          <h3 className="font-semibold text-blue-800 mb-2">What happens when you join?</h3>
-          <ul className="text-sm text-blue-700 space-y-1">
-            <li>• Get real-time score updates</li>
-            <li>• View live tournament progress</li>
-            <li>• Edit scores (if authorized)</li>
-            <li>• See final rankings</li>
-          </ul>
-        </div>
-      </div>
-    </div>
+          {!loading && error && (
+            <div className="space-y-3">
+              <button type="button" onClick={joinActiveTournament} className="app-btn-action">
+                Try Again
+              </button>
+            <AppLinkButton href="/create-tournament" variant="primary">
+              Create New Tournament
+            </AppLinkButton>
+            </div>
+          )}
+        </PageContent>
+      </PageCard>
+    </PageShell>
   );
 }

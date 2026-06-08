@@ -6,10 +6,7 @@ const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 4000;
 
-// In-memory tournament snapshots keyed by accessCode
-const accessCodeToTournament = new Map();
-// Also map tournamentId for quick room naming
-const tournamentIdToAccessCode = new Map();
+const tournamentsById = new Map();
 
 const server = http.createServer((req, res) => {
   res.writeHead(200, {
@@ -22,8 +19,8 @@ const server = http.createServer((req, res) => {
 const io = new Server(server, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST']
-  }
+    methods: ['GET', 'POST'],
+  },
 });
 
 function getRoomName(tournamentId) {
@@ -31,42 +28,33 @@ function getRoomName(tournamentId) {
 }
 
 io.on('connection', (socket) => {
-  // Client announces it created a tournament
   socket.on('create-tournament', (tournament) => {
-    if (!tournament || !tournament.accessCode || !tournament.id) return;
-    accessCodeToTournament.set(tournament.accessCode, tournament);
-    tournamentIdToAccessCode.set(tournament.id, tournament.accessCode);
+    if (!tournament?.id) return;
+    tournamentsById.set(tournament.id, tournament);
 
     const room = getRoomName(tournament.id);
     socket.join(room);
     io.to(room).emit('tournament:sync', tournament);
   });
 
-  // Client joins by access code (spectators/players)
-  socket.on('join-tournament', (accessCode) => {
-    const tournament = accessCodeToTournament.get(accessCode);
-    if (!tournament) return; // Client should retry or show error
-    if (tournament.isFinalized) {
-      socket.emit('join:error', { reason: 'finalized' });
-      return;
-    }
-    const room = getRoomName(tournament.id);
+  socket.on('join-tournament', (tournamentId) => {
+    if (!tournamentId) return;
+    const room = getRoomName(tournamentId);
     socket.join(room);
-    socket.emit('tournament:sync', tournament);
+    const tournament = tournamentsById.get(tournamentId);
+    if (tournament) {
+      socket.emit('tournament:sync', tournament);
+    }
   });
 
-  // Client sends updated tournament snapshot after a score update
-  // Accepts either (tournament) or ({ tournament, update }) where update carries match info
   socket.on('tournament:update', (payload) => {
     const tournament = payload?.tournament ?? payload;
-    if (!tournament || !tournament.id || !tournament.accessCode) return;
-    accessCodeToTournament.set(tournament.accessCode, tournament);
-    tournamentIdToAccessCode.set(tournament.id, tournament.accessCode);
+    if (!tournament?.id) return;
+    tournamentsById.set(tournament.id, tournament);
 
     const room = getRoomName(tournament.id);
     io.to(room).emit('tournament:sync', tournament);
 
-    // Broadcast a toast to everyone EXCEPT the sender if we have update info
     const update = payload?.update;
     if (update && typeof update === 'object') {
       socket.to(room).emit('toast:score', {
@@ -83,5 +71,3 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
   console.log(`Socket server listening on port ${PORT}`);
 });
-
-

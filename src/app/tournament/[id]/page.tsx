@@ -3,10 +3,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Tournament, updateMatchScore, isTournamentComplete } from '@/lib/gameLogic';
-import { getSocket } from '@/lib/socket';
+import { Tournament, updateMatchScore, isTournamentComplete, NUM_ROUNDS, getTeamLabel } from '@/lib/gameLogic';
+import { subscribeLiveTournament } from '@/lib/liveUpdates';
+import { PageLoading, PageShell } from '@/components/PageShell';
 import TournamentHeader from '@/components/TournamentHeader';
 import PlayersTab from '@/components/PlayersTab';
+import PlayerListEditor from '@/components/PlayerListEditor';
 import MatchesTab from '@/components/MatchesTab';
 import RankTab from '@/components/RankTab';
 
@@ -18,6 +20,7 @@ export default function TournamentPage() {
   const [activeTab, setActiveTab] = useState<TabType>('matches');
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [showPlayersModal, setShowPlayersModal] = useState(false);
   const latestTournamentRef = useRef<Tournament | null>(null);
 
   useEffect(() => {
@@ -25,70 +28,79 @@ export default function TournamentPage() {
   }, [tournament]);
 
   useEffect(() => {
-    // Use requestAnimationFrame for smoother loading
-    requestAnimationFrame(() => {
-      (async () => {
-        // Load tournament from API first; fallback to localStorage
-        const id = (params as any)?.id as string;
-        let parsedTournament: any = null;
-        try {
-          const res = await fetch(`/api/tournaments/${id}`, { cache: 'no-store' });
-          if (res.ok) {
-            parsedTournament = await res.json();
-            try { localStorage.setItem('currentTournament', JSON.stringify(parsedTournament)); } catch {}
-          }
-        } catch {}
-        if (!parsedTournament) {
-          const storedTournament = localStorage.getItem('currentTournament');
-          if (storedTournament) parsedTournament = JSON.parse(storedTournament);
-        }
-        if (parsedTournament) {
-          setTournament(parsedTournament);
-          // Join live updates for this tournament
-          try {
-            const socket = getSocket();
-            const joinRoom = () => socket.emit('join-tournament', parsedTournament.accessCode);
-            joinRoom();
-            socket.io.on('reconnect', joinRoom);
-            socket.on('tournament:sync', (serverTournament: Tournament) => {
-              // Only accept updates for this tournament id
-              if (serverTournament?.id === parsedTournament.id) {
-                localStorage.setItem('currentTournament', JSON.stringify(serverTournament));
-                setTournament(serverTournament);
-              }
-            });
-            socket.on('toast:score', (payload: any) => {
-              if (payload && typeof payload === 'object') {
-                const { round, scoreA, scoreB, matchId } = payload as any;
+    if (!showPlayersModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowPlayersModal(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showPlayersModal]);
 
-                const base = latestTournamentRef.current || parsedTournament;
-                let msg = `Scores updated for Round ${round}: ${scoreA}-${scoreB}`;
-                try {
-                  const match = base?.matches.find((m: any) => m.id === matchId);
-                  const getName = (id: number) => base?.players.find((p: any) => p.id === id)?.name || `P${id}`;
-                  if (match) {
-                    const teamA = `${getName(match.teamA.player1)}-${getName(match.teamA.player2)}`;
-                    const teamB = `${getName(match.teamB.player1)}-${getName(match.teamB.player2)}`;
-                    msg = `Round ${round}: ${teamA} vs ${teamB} — ${scoreA}-${scoreB}`;
-                  }
-                } catch {}
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
 
-                setToast(msg);
-                setTimeout(() => setToast(null), 3000);
-              }
-            });
-          } catch (_) {
-            // socket init failed in this environment; silently ignore
-          }
-          
-          // If tournament is complete, show rank tab
-          if (isTournamentComplete(parsedTournament)) {
-            setActiveTab('rank');
-          }
-        }
+    (async () => {
+      const id = (params as { id?: string })?.id;
+      if (!id) {
         setLoading(false);
-      })();
-    });
+        return;
+      }
+
+      let parsedTournament: Tournament | null = null;
+      try {
+        const res = await fetch(`/api/tournaments/${id}`, { cache: 'no-store' });
+        if (res.ok) {
+          parsedTournament = await res.json();
+          try {
+            localStorage.setItem('currentTournament', JSON.stringify(parsedTournament));
+          } catch {}
+        }
+      } catch {}
+
+      if (!parsedTournament) {
+        const storedTournament = localStorage.getItem('currentTournament');
+        if (storedTournament) parsedTournament = JSON.parse(storedTournament);
+      }
+
+      if (cancelled) return;
+
+      if (parsedTournament) {
+        setTournament(parsedTournament);
+        unsubscribe = subscribeLiveTournament(parsedTournament.id, {
+          onSync: (serverTournament) => {
+            localStorage.setItem('currentTournament', JSON.stringify(serverTournament));
+            setTournament(serverTournament);
+          },
+          onToast: (payload) => {
+            const { round, scoreA, scoreB, matchId } = payload;
+            const base = latestTournamentRef.current || parsedTournament;
+            let msg = `Scores updated for Round ${round}: ${scoreA}-${scoreB}`;
+            try {
+              const match = base?.matches.find((m) => m.id === matchId);
+              if (match) {
+                const teamA = getTeamLabel(match.teamAId);
+                const teamB = getTeamLabel(match.teamBId);
+                msg = `Round ${round}: Team ${teamA} vs Team ${teamB} — ${scoreA}-${scoreB}`;
+              }
+            } catch {}
+            setToast(msg);
+            setTimeout(() => setToast(null), 3000);
+          },
+        });
+
+        if (isTournamentComplete(parsedTournament)) {
+          setActiveTab('rank');
+        }
+      }
+
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [params]);
 
   const handleScoreUpdate = async (matchId: number, scoreA: number, scoreB: number, isEdit: boolean = false) => {
@@ -122,23 +134,6 @@ export default function TournamentPage() {
       console.error('Failed to save score to database:', error);
     }
 
-    // Broadcast to all viewers (creator, joiners, spectators)
-    try {
-      const socket = getSocket();
-      const match = updatedTournament.matches.find(m => m.id === matchId);
-      socket.emit('tournament:update', {
-        tournament: updatedTournament,
-        update: match ? {
-          matchId: match.id,
-          round: match.round,
-          scoreA,
-          scoreB
-        } : undefined
-      });
-    } catch (_) {
-      // ignore if socket not available
-    }
-
     // Only auto-advance if this is NOT an edit and we're on the matches tab
     if (!isEdit && activeTab === 'matches') {
       // Check if current round is complete
@@ -155,7 +150,7 @@ export default function TournamentPage() {
           // Force another save to be absolutely sure
           localStorage.setItem('currentTournament', JSON.stringify(updatedTournament));
           
-          if (updatedTournament.currentRound === 7 && currentRoundComplete) {
+          if (updatedTournament.currentRound === NUM_ROUNDS && currentRoundComplete) {
             // Tournament complete - go to rank tab
             setActiveTab('rank');
           } else {
@@ -173,13 +168,13 @@ export default function TournamentPage() {
     }
   };
 
-  const handlePlayerUpdate = async (updatedPlayers: string[]) => {
+  const handleTeamUpdate = async (teams: { player1: string; player2: string }[]) => {
     if (!tournament) return;
     try {
       const res = await fetch(`/api/tournaments/${tournament.id}/players`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerNames: updatedPlayers }),
+        body: JSON.stringify({ teams }),
       });
       if (!res.ok) {
         const errorData = await res.json();
@@ -190,10 +185,6 @@ export default function TournamentPage() {
       const updated = await res.json();
       setTournament(updated);
       try { localStorage.setItem('currentTournament', JSON.stringify(updated)); } catch {}
-      try {
-        const socket = getSocket();
-        socket.emit('tournament:update', { tournament: updated });
-      } catch {}
     } catch (e) {
       console.error('Error updating players:', e);
       alert('Failed to update players. Please try again.');
@@ -211,12 +202,6 @@ export default function TournamentPage() {
       setTournament(updated);
       try { localStorage.setItem('currentTournament', JSON.stringify(updated)); } catch {}
 
-      // Broadcast finalization so all clients lock immediately
-      try {
-        const socket = getSocket();
-        socket.emit('tournament:update', { tournament: updated });
-      } catch {}
-
       // Save to tournament history locally
       const history = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
       history.push(updated);
@@ -225,65 +210,127 @@ export default function TournamentPage() {
   };
 
   if (loading) {
-    return (
-      <div className="mobile-container bg-blue-600 min-h-screen flex items-center justify-center">
-        <div className="text-white text-xl">Loading tournament...</div>
-      </div>
-    );
+    return <PageLoading message="Loading tournament..." />;
   }
 
   if (!tournament) {
     return (
-      <div className="mobile-container bg-blue-600 min-h-screen flex items-center justify-center">
-        <div className="text-white text-xl text-center">
+      <PageShell centered>
+        <div className="text-white text-xl text-center px-6">
           <p>Tournament not found</p>
           <Link href="/" className="text-blue-200 underline mt-4 block">
             Return to Home
           </Link>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
+  const isPlayersEditable = !tournament.matches.some((m) => m.completed);
+  const playersEditTitle = tournament.isFinalized
+    ? 'Tournament finalized'
+    : !isPlayersEditable
+      ? 'Teams locked after first score'
+      : 'Edit players';
+
   return (
-    <div className="mobile-container bg-blue-600 min-h-screen safe-area-inset-top safe-area-inset-bottom relative">
-      <TournamentHeader 
-        date={tournament.date}
-        accessCode={tournament.accessCode}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
+    <PageShell className="relative !min-h-0">
+      <div className="tournament-shell">
+        <TournamentHeader
+          date={tournament.date}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onEditPlayers={() => setShowPlayersModal(true)}
+          editPlayersTitle={playersEditTitle}
+        />
 
-      <div className="flex-1 bg-white mx-[4%] mb-[4%] rounded-b-xl overflow-hidden">
-        {activeTab === 'players' && (
-          <PlayersTab 
-            players={tournament.players}
-            onUpdatePlayers={handlePlayerUpdate}
-            isFinalized={tournament.isFinalized}
-            isEditable={!tournament.matches.some(m => m.completed)}
-          />
-        )}
+        <div className="tournament-tab-scroll">
+          <div className="tournament-tab-stack">
+            <div
+              className={`tournament-tab-pane tournament-tab-pane-players ${
+                activeTab === 'players' ? 'tournament-tab-pane-active' : 'tournament-tab-pane-inactive'
+              }`}
+            >
+              <PlayersTab
+                tournament={tournament}
+                onUpdateTeams={handleTeamUpdate}
+                isFinalized={tournament.isFinalized}
+                isEditable={!tournament.matches.some((m) => m.completed)}
+              />
+            </div>
 
-        {activeTab === 'matches' && (
-          <MatchesTab
-            tournament={tournament}
-            onScoreUpdate={handleScoreUpdate}
-          />
-        )}
+            <div
+              className={`tournament-tab-pane tournament-tab-pane-matches ${
+                activeTab === 'matches' ? 'tournament-tab-pane-active' : 'tournament-tab-pane-inactive'
+              }`}
+            >
+              <MatchesTab
+                tournament={tournament}
+                onScoreUpdate={handleScoreUpdate}
+                onFinalize={handleFinalizeTournament}
+              />
+            </div>
 
-        {activeTab === 'rank' && (
-          <RankTab
-            tournament={tournament}
-            onFinalize={handleFinalizeTournament}
-          />
-        )}
+            <div
+              className={`tournament-tab-pane tournament-tab-pane-rank ${
+                activeTab === 'rank' ? 'tournament-tab-pane-active' : 'tournament-tab-pane-inactive'
+              }`}
+            >
+              <RankTab
+                tournament={tournament}
+                onFinalize={handleFinalizeTournament}
+              />
+            </div>
+          </div>
+        </div>
       </div>
+
+      {showPlayersModal && (
+        <div
+          className="player-edit-modal-backdrop"
+          role="presentation"
+          onClick={() => setShowPlayersModal(false)}
+        >
+          <div
+            className="player-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="player-edit-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="player-edit-modal-header">
+              <h3 id="player-edit-modal-title" className="player-edit-modal-title">
+                Players
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPlayersModal(false)}
+                className="player-edit-modal-close"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="player-edit-modal-body">
+              <PlayerListEditor
+                tournament={tournament}
+                onUpdateTeams={handleTeamUpdate}
+                isFinalized={tournament.isFinalized}
+                isEditable={isPlayersEditable}
+                layout="desktop"
+                autoEdit={isPlayersEditable && !tournament.isFinalized}
+                onClose={() => setShowPlayersModal(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className="absolute left-1/2 -translate-x-1/2 bottom-6 bg-black text-white px-4 py-2 rounded-lg text-sm shadow-lg animate-fade-in-out">
           {toast}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { ChevronLeftIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { UserGroupIcon } from '@heroicons/react/24/outline';
+import { PageCard, PageContent, PageHeader, PageLoading, PageShell } from '@/components/PageShell';
 
 interface PartnershipStats {
   totalGames: number;
@@ -32,16 +31,12 @@ interface PartnershipData {
 }
 
 function PartnershipStatsContent() {
-  const searchParams = useSearchParams();
-  const yearParam = searchParams.get('year');
-  
   const [players, setPlayers] = useState<string[]>([]);
   const [player1, setPlayer1] = useState<string>('');
   const [player2, setPlayer2] = useState<string>('');
   const [partnershipData, setPartnershipData] = useState<PartnershipData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
-  const [selectedYear] = useState<string>(yearParam || 'all');
 
   // Fetch all players on component mount
   useEffect(() => {
@@ -77,14 +72,19 @@ function PartnershipStatsContent() {
 
     try {
       const response = await fetch(
-        `/api/analytics/partnership-stats?player1=${encodeURIComponent(player1)}&player2=${encodeURIComponent(player2)}&year=${selectedYear}`
+        `/api/analytics/partnership-stats?player1=${encodeURIComponent(player1)}&player2=${encodeURIComponent(player2)}&year=all`
       );
       
       if (response.ok) {
         const data = await response.json();
-        setPartnershipData(data);
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setPartnershipData(data);
+        }
       } else {
-        setError('Failed to fetch partnership statistics');
+        const data = await response.json().catch(() => ({}));
+        setError(data.error || 'Failed to fetch partnership statistics');
       }
     } catch (err) {
       setError('An error occurred while fetching data');
@@ -96,25 +96,17 @@ function PartnershipStatsContent() {
   const availablePlayer2Options = players.filter(p => p !== player1);
 
   return (
-    <div className="mobile-container bg-blue-600 min-h-screen safe-area-inset-top safe-area-inset-bottom">
-      {/* Header */}
-      <div className="bg-white mx-[4%] mt-[4%] rounded-t-xl px-4 py-3 flex items-center">
-        <Link href="/" className="flex items-center text-gray-600 hover:text-gray-800">
-          <ChevronLeftIcon className="w-5 h-5 mr-1" />
-          <UserGroupIcon className="w-5 h-5 mr-2" />
-          <span className="font-semibold">Partnership Statistics</span>
-        </Link>
-      </div>
+    <PageShell>
+      <PageCard>
+        <PageHeader
+          title="Partnership Statistics"
+          icon={<UserGroupIcon className="w-5 h-5" />}
+        />
 
-      {/* Content */}
-      <div className="bg-white mx-[4%] mb-[4%] rounded-b-xl flex-1">
-        <div className="p-4">
-          {/* Player Selection */}
+        <PageContent>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select First Player
-              </label>
+              <label className="app-label">Select First Player</label>
               <select
                 value={player1}
                 onChange={(e) => {
@@ -123,7 +115,7 @@ function PartnershipStatsContent() {
                     setPlayer2('');
                   }
                 }}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="app-select"
               >
                 <option value="">Choose a player...</option>
                 {players.map((player) => (
@@ -135,13 +127,11 @@ function PartnershipStatsContent() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Second Player
-              </label>
+              <label className="app-label">Select Second Player</label>
               <select
                 value={player2}
                 onChange={(e) => setPlayer2(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="app-select"
                 disabled={!player1}
               >
                 <option value="">Choose a partner...</option>
@@ -154,18 +144,15 @@ function PartnershipStatsContent() {
             </div>
 
             <button
+              type="button"
               onClick={handleSearch}
               disabled={!player1 || !player2 || loading}
-              className="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              className={!player1 || !player2 || loading ? 'app-btn-disabled' : 'app-btn-action'}
             >
               {loading ? 'Searching...' : 'Get Partnership Stats'}
             </button>
 
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                {error}
-              </div>
-            )}
+            {error && <div className="app-alert-error">{error}</div>}
           </div>
 
           {/* Results */}
@@ -182,38 +169,38 @@ function PartnershipStatsContent() {
                 </div>
               ) : (
                 <div>
-                  <h2 className="text-lg font-bold text-gray-800 mb-2 text-center">
+                  <h2 className="page-title text-center mb-2">
                     {partnershipData.player1} & {partnershipData.player2}
                   </h2>
-                  <p className="text-sm text-gray-600 text-center mb-4">
-                    Partnership stats for {selectedYear === 'all' ? 'all years' : selectedYear}
+                  <p className="page-subtitle text-center mb-4">
+                    Partnership stats across all tournaments
                   </p>
                   
                   {partnershipData.stats && (
                     <div className="grid grid-cols-2 gap-4 mb-6">
-                      <div className="bg-gray-50 p-4 rounded-lg text-center">
+                      <div className="tab-card text-center">
                         <div className="text-2xl font-bold text-green-600">
                           {partnershipData.stats.wins}
                         </div>
                         <div className="text-sm text-gray-600">Wins</div>
                       </div>
                       
-                      <div className="bg-gray-50 p-4 rounded-lg text-center">
+                      <div className="tab-card text-center">
                         <div className="text-2xl font-bold text-red-600">
                           {partnershipData.stats.losses}
                         </div>
                         <div className="text-sm text-gray-600">Losses</div>
                       </div>
                       
-                      <div className="bg-gray-50 p-4 rounded-lg text-center">
-                        <div className="text-2xl font-bold text-blue-600">
+                      <div className="tab-card text-center">
+                        <div className="text-2xl font-bold text-blue-700">
                           {partnershipData.stats.winPercentage}%
                         </div>
                         <div className="text-sm text-gray-600">Win Rate</div>
                       </div>
                       
-                      <div className="bg-gray-50 p-4 rounded-lg text-center">
-                        <div className="text-2xl font-bold text-purple-600">
+                      <div className="tab-card text-center">
+                        <div className="text-2xl font-bold text-gray-800">
                           {partnershipData.stats.avgMarginVictory > 0 ? `+${partnershipData.stats.avgMarginVictory}` : partnershipData.stats.avgMarginVictory}
                         </div>
                         <div className="text-sm text-gray-600">Avg Margin</div>
@@ -258,19 +245,15 @@ function PartnershipStatsContent() {
               )}
             </div>
           )}
-        </div>
-      </div>
-    </div>
+        </PageContent>
+      </PageCard>
+    </PageShell>
   );
 }
 
 export default function PartnershipStatsPage() {
   return (
-    <Suspense fallback={
-      <div className="mobile-container bg-blue-600 min-h-screen flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
-      </div>
-    }>
+    <Suspense fallback={<PageLoading message="Loading..." />}>
       <PartnershipStatsContent />
     </Suspense>
   );

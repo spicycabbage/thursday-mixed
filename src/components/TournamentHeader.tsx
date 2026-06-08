@@ -1,22 +1,26 @@
 'use client';
 
+import { PencilIcon } from '@heroicons/react/24/outline';
+
 interface TournamentHeaderProps {
   date: string;
-  accessCode: string;
   activeTab: 'players' | 'matches' | 'rank';
   onTabChange: (tab: 'players' | 'matches' | 'rank') => void;
+  onEditPlayers?: () => void;
+  editPlayersDisabled?: boolean;
+  editPlayersTitle?: string;
 }
 
-export default function TournamentHeader({ 
-  date, 
-  accessCode, 
-  activeTab, 
-  onTabChange 
+export default function TournamentHeader({
+  date,
+  activeTab,
+  onTabChange,
+  onEditPlayers,
+  editPlayersDisabled = false,
+  editPlayersTitle = 'Edit players',
 }: TournamentHeaderProps) {
   const formatDate = (dateString: string) => {
-    // Interpret stored YYYY-MM-DD as a calendar date in Pacific Time without shifting a day
     const [y, m, d] = dateString.split('-').map(Number);
-    // Use 12:00 UTC to avoid timezone crossing into previous/next day when formatting
     const middayUtc = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
     return middayUtc.toLocaleDateString('en-US', {
       timeZone: 'America/Los_Angeles',
@@ -27,49 +31,41 @@ export default function TournamentHeader({
     });
   };
 
+  const tabClass = (tab: 'players' | 'matches' | 'rank') =>
+    `flex-1 py-3 text-center font-semibold transition-colors border-b-2 ${
+      activeTab === tab
+        ? 'bg-blue-600 text-white border-blue-600'
+        : 'bg-gray-200 text-gray-900 border-transparent hover:bg-gray-300'
+    }`;
+
   return (
-    <div className="bg-white mx-[4%] mt-[3.5%] rounded-t-xl">
-      {/* Date and Access Code Header */}
-      <div className="px-4 py-2.5 border-b border-gray-200 flex justify-between items-center">
-        <div className="text-sm text-gray-600">
+    <div className="shrink-0 border-b border-gray-300">
+      <div className="tournament-header-bar px-4 py-2.5 border-b border-gray-300 bg-white">
+        <div className="text-base text-gray-900 font-bold tournament-header-date">
           {formatDate(date)}
         </div>
-        <div className="text-sm text-gray-600">
-          <span className="font-semibold">Code: </span>
-          <span className="font-mono">{accessCode}</span>
-        </div>
+        {onEditPlayers && (
+          <button
+            type="button"
+            onClick={onEditPlayers}
+            disabled={editPlayersDisabled}
+            className="tournament-header-edit-btn hidden md:flex"
+            title={editPlayersTitle}
+            aria-label={editPlayersTitle}
+          >
+            <PencilIcon className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex">
-        <button
-          onClick={() => onTabChange('players')}
-          className={`flex-1 py-3 text-center font-semibold transition-colors ${
-            activeTab === 'players'
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
+      <div className="tournament-tab-nav flex bg-white">
+        <button type="button" onClick={() => onTabChange('players')} className={tabClass('players')}>
           Players
         </button>
-        <button
-          onClick={() => onTabChange('matches')}
-          className={`flex-1 py-3 text-center font-semibold transition-colors ${
-            activeTab === 'matches'
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
+        <button type="button" onClick={() => onTabChange('matches')} className={tabClass('matches')}>
           Matches
         </button>
-        <button
-          onClick={() => onTabChange('rank')}
-          className={`flex-1 py-3 text-center font-semibold transition-colors ${
-            activeTab === 'rank'
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
+        <button type="button" onClick={() => onTabChange('rank')} className={tabClass('rank')}>
           Rank
         </button>
       </div>

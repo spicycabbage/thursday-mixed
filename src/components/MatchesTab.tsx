@@ -1,281 +1,105 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Tournament, Match, validateScore } from '@/lib/gameLogic';
-
+import { Tournament, NUM_ROUNDS } from '@/lib/gameLogic';
+import TabPanel from '@/components/TabPanel';
+import { TrophyIcon } from '@heroicons/react/24/outline';
+import MatchCard from '@/components/matches/MatchCard';
+import MatchesDesktopLayout from '@/components/matches/MatchesDesktopLayout';
 
 interface MatchesTabProps {
   tournament: Tournament;
   onScoreUpdate: (matchId: number, scoreA: number, scoreB: number, isEdit?: boolean) => void;
+  onFinalize?: () => void;
 }
 
-export default function MatchesTab({ tournament, onScoreUpdate }: MatchesTabProps) {
+export default function MatchesTab({ tournament, onScoreUpdate, onFinalize }: MatchesTabProps) {
   const [selectedRound, setSelectedRound] = useState(tournament.currentRound);
   const [autoFollow, setAutoFollow] = useState(true);
 
-  // Update selected round when tournament current round changes, but only if we're not editing
   useEffect(() => {
-    // Auto-follow the tournament's current round only when user hasn't navigated manually
-    if (autoFollow) {
-      setSelectedRound(tournament.currentRound);
-    }
+    if (autoFollow) setSelectedRound(tournament.currentRound);
   }, [tournament.currentRound, autoFollow]);
 
-  const getRoundStatus = useCallback((round: number) => {
-    const roundMatches = tournament.matches.filter(m => m.round === round);
-    const allCompleted = roundMatches.every(m => m.completed);
-    
-    if (round === tournament.currentRound && !allCompleted) return 'current';
-    if (allCompleted) return 'completed';
-    return 'pending';
-  }, [tournament.matches, tournament.currentRound]);
+  const getRoundStatus = useCallback(
+    (round: number) => {
+      const roundMatches = tournament.matches.filter((m) => m.round === round);
+      const allCompleted = roundMatches.every((m) => m.completed);
+      if (round === tournament.currentRound && !allCompleted) return 'current';
+      if (allCompleted) return 'completed';
+      return 'pending';
+    },
+    [tournament.matches, tournament.currentRound]
+  );
 
-  const canSelectRound = useCallback((round: number) => {
-    const status = getRoundStatus(round);
-    return status !== 'pending';
-  }, [getRoundStatus]);
+  const canSelectRound = useCallback(
+    (round: number) => getRoundStatus(round) !== 'pending',
+    [getRoundStatus]
+  );
 
-  const currentRoundMatches = useMemo(() => 
-    tournament.matches.filter(m => m.round === selectedRound),
+  const currentRoundMatches = useMemo(
+    () => tournament.matches.filter((m) => m.round === selectedRound),
     [tournament.matches, selectedRound]
   );
 
-  return (
-    <div className="p-4 w-full max-w-full">
-      <div className="w-full">
-      {/* Round Navigation */}
-      <div className="flex items-center justify-center mb-4">
-        <div className="flex">
-          {[1, 2, 3, 4, 5, 6, 7].map((round) => {
-            const status = getRoundStatus(round);
-            const isSelected = round === selectedRound;
-            const canSelect = canSelectRound(round);
-
-            return (
-              <button
-                key={round}
-                onClick={() => {
-                  if (!canSelect) return;
-                  setSelectedRound(round);
-                  // Disable auto-follow if the user navigates away from the live current round
-                  setAutoFollow(round === tournament.currentRound);
-                }}
-                disabled={!canSelect}
-                className={`round-button ${
-                  isSelected 
-                    ? 'ring-2 ring-blue-300' 
-                    : ''
-                } ${
-                  status === 'current' ? 'round-current' :
-                  status === 'completed' ? 'round-completed' :
-                  'round-pending'
-                }`}
-              >
-                {round}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="text-center mb-3">
-        <h3 className="text-lg font-bold">Round {selectedRound}</h3>
-      </div>
-
-      {/* Matches */}
-      <div className="space-y-4">
-        {currentRoundMatches.map((match) => (
-          <MatchCard
-            key={match.id}
-            match={match}
-            tournament={tournament}
-            onScoreUpdate={onScoreUpdate}
-          />
-        ))}
-      </div>
-      </div>
-    </div>
-  );
-}
-
-interface MatchCardProps {
-  match: Match;
-  tournament: Tournament;
-  onScoreUpdate: (matchId: number, scoreA: number, scoreB: number, isEdit?: boolean) => void;
-}
-
-function MatchCard({ match, tournament, onScoreUpdate }: MatchCardProps) {
-  const [scoreA, setScoreA] = useState(match.scoreA?.toString() || '');
-  const [scoreB, setScoreB] = useState(match.scoreB?.toString() || '');
-  const [showValidation, setShowValidation] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const isLocked = tournament.isFinalized;
-
-  const getPlayerName = useCallback((playerId: number) => {
-    return tournament.players.find(p => p.id === playerId)?.name || `P${playerId}`;
-  }, [tournament.players]);
-
-  const handleSubmit = useCallback(() => {
-    const numScoreA = parseInt(scoreA) || 0;
-    const numScoreB = parseInt(scoreB) || 0;
-
-    if (!validateScore(numScoreA, numScoreB)) {
-      setShowValidation(true);
-      setTimeout(() => setShowValidation(false), 3000);
-      return;
-    }
-
-    // Determine if this is an edit: match was already completed OR we're in editing mode
-    const isEditOperation = match.completed || isEditing;
-    
-    onScoreUpdate(match.id, numScoreA, numScoreB, isEditOperation);
-    setIsEditing(false);
-  }, [scoreA, scoreB, match.id, onScoreUpdate, isEditing, match.completed]);
-
-  const handleEdit = useCallback(() => {
-    setIsEditing(true);
-    setScoreA(match.scoreA?.toString() || '');
-    setScoreB(match.scoreB?.toString() || '');
-  }, [match.scoreA, match.scoreB]);
-
-  const handleCancelEdit = useCallback(() => {
-    setIsEditing(false);
-    setScoreA(match.scoreA?.toString() || '');
-    setScoreB(match.scoreB?.toString() || '');
-    setShowValidation(false);
-  }, [match.scoreA, match.scoreB]);
-
-  const isValid = useMemo(() => {
-    const numScoreA = parseInt(scoreA) || 0;
-    const numScoreB = parseInt(scoreB) || 0;
-    return validateScore(numScoreA, numScoreB);
-  }, [scoreA, scoreB]);
-
-  const isCompleted = match.completed;
-  const containerClass = isCompleted 
-    ? 'bg-green-100 border-2 border-green-400 rounded-xl p-2 mb-4' 
-    : 'bg-white border-2 border-gray-200 rounded-xl p-2 mb-4';
-
-  return (
-    <div className={containerClass}>
-      {/* Team A */}
-      <div className="team-a mb-3 p-4 rounded-lg">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center space-x-2 flex-1 min-w-0">
-            <div className="text-lg font-bold text-blue-800">A</div>
-            <div className="flex flex-col space-y-1 flex-1 min-w-0">
-              <span className="player-button">
-                {getPlayerName(match.teamA.player1)}
-              </span>
-              <span className="player-button">
-                {getPlayerName(match.teamA.player2)}
-              </span>
-            </div>
-          </div>
-          <div className="text-3xl font-bold text-right w-[80px] flex-shrink-0 ml-4">
-            {isLocked || (isCompleted && !isEditing) ? (match.scoreA ?? '-') : (
-              <input
-                type="number"
-                value={scoreA}
-                onChange={(e) => setScoreA(e.target.value)}
-                className="w-16 h-12 text-center text-2xl font-bold border-2 border-gray-300 rounded-md focus:outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                min="0"
-                max="21"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="0"
-                disabled={isLocked}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Team B */}
-      <div className="team-b mb-4 p-4 rounded-lg">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center space-x-2 flex-1 min-w-0">
-            <div className="text-lg font-bold text-red-800">B</div>
-            <div className="flex flex-col space-y-1 flex-1 min-w-0">
-              <span className="player-button bg-red-600">
-                {getPlayerName(match.teamB.player1)}
-              </span>
-              <span className="player-button bg-red-600">
-                {getPlayerName(match.teamB.player2)}
-              </span>
-            </div>
-          </div>
-          <div className="text-3xl font-bold text-right w-[80px] flex-shrink-0 ml-4">
-            {isLocked || (isCompleted && !isEditing) ? (match.scoreB ?? '-') : (
-              <input
-                type="number"
-                value={scoreB}
-                onChange={(e) => setScoreB(e.target.value)}
-                className="w-16 h-12 text-center text-2xl font-bold border-2 border-gray-300 rounded-md focus:outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                min="0"
-                max="21"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="0"
-                disabled={isLocked}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Validation Message */}
-      {showValidation && !isLocked && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-400 rounded text-red-700 text-sm">
-          <p className="font-semibold">Invalid Score!</p>
-          <p>One team must score exactly 21 points, the other must score less than 21.</p>
-        </div>
-      )}
-
-      {/* Submit Button */}
-      {(!isCompleted || isEditing) && !tournament.isFinalized && (
-        <div className="space-y-2">
+  const roundToolbar = (
+    <div className="round-nav">
+      {Array.from({ length: NUM_ROUNDS }, (_, i) => i + 1).map((round) => {
+        const status = getRoundStatus(round);
+        const isSelected = round === selectedRound;
+        const canSelect = canSelectRound(round);
+        return (
           <button
-            onClick={handleSubmit}
-            disabled={!isValid}
-            className={`w-full py-3 rounded-lg font-semibold transition-colors ${
-              isValid
-                ? 'bg-black text-white hover:bg-gray-800 active:bg-gray-900'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            key={round}
+            type="button"
+            onClick={() => {
+              if (!canSelect) return;
+              setSelectedRound(round);
+              setAutoFollow(round === tournament.currentRound);
+            }}
+            disabled={!canSelect}
+            className={`round-button ${isSelected ? 'round-selected' : ''} ${
+              status === 'current'
+                ? 'round-current'
+                : status === 'completed'
+                  ? 'round-completed'
+                  : 'round-pending'
             }`}
           >
-            {isValid ? (isEditing ? 'Update Score' : 'Submit') : 'Enter Valid Scores'}
+            {round}
           </button>
-          
-          {isEditing && (
-            <button
-              onClick={handleCancelEdit}
-              className="w-full py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      )}
-
-      {isCompleted && !isEditing && !tournament.isFinalized && (
-        <div className="flex items-center justify-between w-full py-3 bg-green-500 text-white rounded-lg font-semibold">
-          <button
-            onClick={handleEdit}
-            className="flex items-center justify-center w-8 h-8 bg-green-600 hover:bg-green-700 rounded-md transition-colors ml-2"
-            title="Edit scores"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <span className="flex-1 text-center">✓ Match Completed</span>
-          <div className="w-8"></div> {/* Spacer for centering */}
-        </div>
-      )}
-      {tournament.isFinalized && (
-        <div className="w-full py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold text-center">Tournament Finalized</div>
-      )}
+        );
+      })}
     </div>
+  );
+
+  return (
+    <>
+      <div className="matches-tab-mobile">
+        <TabPanel
+          title="Matches"
+          subtitle={`Round ${selectedRound}`}
+          icon={<TrophyIcon className="w-5 h-5 text-gray-900 shrink-0" />}
+          toolbar={roundToolbar}
+        >
+          <div className="space-y-3">
+            {currentRoundMatches.map((match) => (
+              <MatchCard
+                key={match.id}
+                match={match}
+                tournament={tournament}
+                onScoreUpdate={onScoreUpdate}
+              />
+            ))}
+          </div>
+        </TabPanel>
+      </div>
+
+      <MatchesDesktopLayout
+        tournament={tournament}
+        onScoreUpdate={onScoreUpdate}
+        onFinalize={onFinalize}
+      />
+    </>
   );
 }

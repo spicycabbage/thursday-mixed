@@ -4,8 +4,8 @@ import { ensureSchema, sql } from '@/lib/db';
 export async function GET() {
   try {
     await ensureSchema();
-    const rows = await sql<{ id: string; access_code: string }[]>`
-      select id, access_code from tournaments
+    const rows = await sql<{ id: string }[]>`
+      select id from tournaments
       where is_finalized=false
       order by created_at desc
       limit 1`;

@@ -1,45 +1,39 @@
 import { NextResponse } from 'next/server';
 import { ensureSchema, sql } from '@/lib/db';
 import { assembleTournament } from '@/lib/tournamentRepo';
+import { NUM_TEAMS, normalizeName } from '@/lib/gameLogic';
+import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    console.log('[Players API] Tournament ID from params:', id);
-    
     await ensureSchema();
-    
-    // Verify tournament exists first
+
     const [tournament] = await sql`select id from tournaments where id=${id} limit 1`;
-    console.log('[Players API] Tournament lookup result:', tournament);
-    
     if (!tournament) {
-      console.error('[Players API] Tournament not found in database, id:', id);
       return NextResponse.json({ error: 'Tournament not found' }, { status: 404 });
     }
 
-    const { playerNames } = await req.json();
-    console.log('[Players API] Player names to update:', playerNames);
-    
-    if (!Array.isArray(playerNames) || playerNames.length !== 8) {
-      return NextResponse.json({ error: 'Invalid playerNames' }, { status: 400 });
+    const { teams } = await req.json();
+    if (!Array.isArray(teams) || teams.length !== NUM_TEAMS) {
+      return NextResponse.json({ error: 'Invalid teams: need 6 teams with 2 players each' }, { status: 400 });
     }
 
-    // Update each player's name by id 1..8
-    for (let i = 0; i < 8; i++) {
-      const idNum = i + 1;
-      await sql`update players set name=${playerNames[i]} where tournament_id=${id} and id=${idNum}`;
+    for (let i = 0; i < NUM_TEAMS; i++) {
+      const teamId = i + 1;
+      const player1Id = i * 2 + 1;
+      const player2Id = i * 2 + 2;
+      await sql`update players set name=${normalizeName(teams[i].player1)} where tournament_id=${id} and id=${player1Id}`;
+      await sql`update players set name=${normalizeName(teams[i].player2)} where tournament_id=${id} and id=${player2Id}`;
     }
 
     const updated = await assembleTournament(id);
     if (!updated) {
       return NextResponse.json({ error: 'Failed to fetch updated tournament' }, { status: 500 });
     }
+    await broadcastTournamentUpdate(id, updated);
     return NextResponse.json(updated);
   } catch (e: any) {
-    console.error('Error updating players:', e);
     return NextResponse.json({ error: e.message || 'Server error' }, { status: 500 });
   }
 }
-
-
