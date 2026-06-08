@@ -10,6 +10,8 @@ import {
   NUM_MATCHES,
   NUM_ROUNDS,
   getWinnerTeam,
+  getDesktopSpotlightMatches,
+  matchesShareParticipants,
 } from '../gameLogic';
 
 const sampleTeams = [
@@ -153,6 +155,49 @@ describe('Game Logic', () => {
     it('should return false when matches incomplete', () => {
       const tournament = createTournament(sampleTeams);
       expect(isTournamentComplete(tournament)).toBe(false);
+    });
+  });
+
+  describe('getDesktopSpotlightMatches', () => {
+    it('should not place matches with shared players in spotlight together', () => {
+      const tournament = createTournament(sampleTeams);
+      const match4 = tournament.matches[3];
+      const match5 = tournament.matches[4];
+
+      expect(matchesShareParticipants(match4, match5)).toBe(true);
+
+      const { spotlight, deferred } = getDesktopSpotlightMatches(tournament.matches);
+
+      expect(spotlight).toHaveLength(2);
+      expect(spotlight.every((m) => !matchesShareParticipants(m, spotlight[0]))).toBe(true);
+      expect(deferred.map((m) => m.id)).toContain(5);
+    });
+
+    it('should surface deferred matches after a conflicting spotlight match completes', () => {
+      const tournament = createTournament(sampleTeams);
+
+      for (let id = 1; id <= 3; id++) {
+        tournament.matches = updateMatchScore(tournament, id, 21, 10).matches;
+      }
+
+      const before = getDesktopSpotlightMatches(tournament.matches);
+      expect(before.deferred.map((m) => m.id)).toContain(5);
+
+      tournament.matches = updateMatchScore(tournament, 4, 21, 10).matches;
+
+      const after = getDesktopSpotlightMatches(tournament.matches);
+      expect(after.spotlight.map((m) => m.id)).toContain(5);
+    });
+
+    it('should fill spotlight with conflicting matches when no clean second match exists', () => {
+      const tournament = createTournament(sampleTeams);
+      const blockedQueue = tournament.matches.filter((m) => m.id >= 4 && m.id <= 7);
+      const { spotlight } = getDesktopSpotlightMatches(blockedQueue);
+
+      expect(spotlight).toHaveLength(2);
+      expect(spotlight[0].id).toBe(4);
+      expect(spotlight[1].id).toBe(5);
+      expect(matchesShareParticipants(spotlight[0], spotlight[1])).toBe(true);
     });
   });
 });

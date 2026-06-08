@@ -1,11 +1,17 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Tournament, getRankedTeams, isTournamentComplete } from '@/lib/gameLogic';
+import {
+  Tournament,
+  getDesktopSpotlightMatches,
+  getRankedTeams,
+  isTournamentComplete,
+} from '@/lib/gameLogic';
 import { TrophyIcon } from '@heroicons/react/24/outline';
 import TeamStandingsPanel from '@/components/TeamStandingsPanel';
 import MatchCard from '@/components/matches/MatchCard';
 import WinnerCelebrationSpotlight from '@/components/matches/WinnerCelebrationSpotlight';
+import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
 
 interface MatchesDesktopLayoutProps {
   tournament: Tournament;
@@ -19,6 +25,7 @@ export default function MatchesDesktopLayout({
   onFinalize,
 }: MatchesDesktopLayoutProps) {
   const [modalMatchId, setModalMatchId] = useState<number | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const miniCarouselRef = useRef<HTMLDivElement>(null);
 
   const tournamentComplete = isTournamentComplete(tournament);
@@ -37,19 +44,17 @@ export default function MatchesDesktopLayout({
     [sortedMatches]
   );
 
-  const incompleteMatches = useMemo(
-    () => sortedMatches.filter((m) => !m.completed),
+  const { spotlight: spotlightMatches, deferred: deferredMatches } = useMemo(
+    () => getDesktopSpotlightMatches(sortedMatches),
     [sortedMatches]
   );
-
-  const spotlightMatches = useMemo(() => incompleteMatches.slice(0, 2), [incompleteMatches]);
 
   const spotlightIds = useMemo(
     () => new Set(spotlightMatches.map((m) => m.id)),
     [spotlightMatches]
   );
 
-  const nextQueueMatchId = incompleteMatches[2]?.id;
+  const nextQueueMatchId = deferredMatches[0]?.id;
 
   const minimizedMatches = useMemo(
     () => sortedMatches.filter((m) => !spotlightIds.has(m.id)),
@@ -150,8 +155,18 @@ export default function MatchesDesktopLayout({
       </div>
 
       <aside className="matches-desktop-sidebar">
-        <TeamStandingsPanel tournament={tournament} onFinalize={onFinalize} />
+        <TeamStandingsPanel
+          tournament={tournament}
+          onFinalize={onFinalize}
+          onTeamSelect={setSelectedTeamId}
+        />
       </aside>
+
+      <TeamSummaryModal
+        tournament={tournament}
+        teamId={selectedTeamId}
+        onClose={() => setSelectedTeamId(null)}
+      />
 
       {modalMatch && (
         <div

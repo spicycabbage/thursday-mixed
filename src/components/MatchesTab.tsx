@@ -74,7 +74,7 @@ export default function MatchesTab({ tournament, onScoreUpdate, onFinalize }: Ma
   );
 
   return (
-    <>
+    <div className="matches-tab-root">
       <div className="matches-tab-mobile">
         <TabPanel
           title="Matches"
@@ -100,6 +100,6 @@ export default function MatchesTab({ tournament, onScoreUpdate, onFinalize }: Ma
         onScoreUpdate={onScoreUpdate}
         onFinalize={onFinalize}
       />
-    </>
+    </div>
   );
 }

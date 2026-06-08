@@ -8,7 +8,7 @@ import { TrophyIcon, CalendarIcon } from '@heroicons/react/24/outline';
 
 import { AppLinkButton, PageCard, PageContent, PageHeader, PageShell, PageTitleBlock } from '@/components/PageShell';
 
-import { Tournament, getRankedTeams, getRankedPlayers } from '@/lib/gameLogic';
+import { Tournament, getRankedTeams, NUM_TEAMS, nameKey, normalizeName, pickDisplayName } from '@/lib/gameLogic';
 
 
 
@@ -46,21 +46,29 @@ function loadLocalTournaments(): Tournament[] {
 
 
 
-function mergeTournaments(primary: Tournament[], local: Tournament[]) {
+type ActiveResponse = { active: boolean; tournament: { id: string } | null };
 
-  const byId = new Map<string, Tournament>();
+function syncTournamentStorage(history: Tournament[], active: ActiveResponse | null) {
 
-  for (const t of [...primary, ...local]) {
+  try {
 
-    if (t?.id) byId.set(t.id, t);
+    localStorage.setItem('tournamentHistory', JSON.stringify(history));
 
-  }
+    const currentRaw = localStorage.getItem('currentTournament');
 
-  return Array.from(byId.values()).sort(
+    if (!currentRaw) return;
 
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    const current = JSON.parse(currentRaw) as Tournament;
 
-  );
+    const activeId = active?.active ? active.tournament?.id : null;
+
+    if (!activeId || current.id !== activeId) {
+
+      localStorage.removeItem('currentTournament');
+
+    }
+
+  } catch {}
 
 }
 
@@ -81,10 +89,6 @@ export default function TournamentResultsPage() {
   useLayoutEffect(() => {
 
     const local = loadLocalTournaments();
-
-    setTournaments(local);
-
-
 
     const fetchHistory = async (attempt: number): Promise<Tournament[] | null> => {
 
@@ -118,11 +122,27 @@ export default function TournamentResultsPage() {
 
 
 
+    const fetchActive = async (): Promise<ActiveResponse | null> => {
+
+      try {
+
+        const response = await fetch(`/api/tournaments/active?t=${Date.now()}`, { cache: 'no-store' });
+
+        if (!response.ok) return null;
+
+        return (await response.json()) as ActiveResponse;
+
+      } catch {
+
+        return null;
+
+      }
+
+    };
+
     const loadTournaments = async () => {
 
       setLoadError(null);
-
-
 
       let dbTournaments: Tournament[] | null = null;
 
@@ -142,11 +162,13 @@ export default function TournamentResultsPage() {
 
       }
 
-
-
       if (dbTournaments) {
 
-        setTournaments(mergeTournaments(dbTournaments, local));
+        const active = await fetchActive();
+
+        syncTournamentStorage(dbTournaments, active);
+
+        setTournaments(dbTournaments);
 
         setLoadError(null);
 
@@ -156,11 +178,11 @@ export default function TournamentResultsPage() {
 
       } else {
 
+        setTournaments(local);
+
         setLoadError('Server is slow to wake up — showing saved tournaments. Refresh in a moment for latest.');
 
       }
-
-
 
       setSyncing(false);
 
@@ -524,29 +546,51 @@ function HistoricalFinishesTab({ tournaments }: HistoricalFinishesTabProps) {
 
   const playerScores: Record<string, number[]> = {};
 
+  const playerRanks: Record<string, number[]> = {};
+
+  const displayNames: Record<string, string> = {};
+
 
 
   tournaments.forEach((tournament) => {
 
-    const rankedPlayers = getRankedPlayers(tournament);
+    const teamRankById = new Map(
 
-    rankedPlayers.forEach((player) => {
+      getRankedTeams(tournament).map((team) => [team.id, team.rank])
 
-      if (!playerFinishes[player.name]) {
+    );
 
-        playerFinishes[player.name] = new Array(12).fill(0);
+    tournament.players.forEach((player) => {
 
-        playerScores[player.name] = [];
+      const finishRank = teamRankById.get(player.teamId);
+
+      if (!finishRank || finishRank > NUM_TEAMS) return;
+
+      const trimmedName = normalizeName(player.name);
+
+      const key = nameKey(trimmedName);
+
+      if (!playerFinishes[key]) {
+
+        playerFinishes[key] = new Array(NUM_TEAMS).fill(0);
+
+        playerScores[key] = [];
+
+        playerRanks[key] = [];
+
+        displayNames[key] = trimmedName;
+
+      } else {
+
+        displayNames[key] = pickDisplayName(displayNames[key], trimmedName);
 
       }
 
-      if (player.rank && player.rank <= 12) {
+      playerFinishes[key][finishRank - 1]++;
 
-        playerFinishes[player.name][player.rank - 1]++;
+      playerRanks[key].push(finishRank);
 
-      }
-
-      playerScores[player.name].push(player.pointDiff);
+      playerScores[key].push(player.pointDiff);
 
     });
 
@@ -554,33 +598,31 @@ function HistoricalFinishesTab({ tournaments }: HistoricalFinishesTabProps) {
 
 
 
-  const playerStats = Object.entries(playerFinishes).map(([name, finishes]) => ({
+  const playerStats = Object.entries(playerFinishes).map(([key, finishes]) => {
 
-    name,
+    const ranks = playerRanks[key] ?? [];
 
-    finishes,
+    return {
 
-    totalTournaments: finishes.reduce((sum, count) => sum + count, 0),
+      name: displayNames[key] ?? key,
 
-    avgScoreDiff: playerScores[name].length > 0
+      finishes,
 
-      ? Math.round(playerScores[name].reduce((sum, score) => sum + score, 0) / playerScores[name].length)
+      totalTournaments: finishes.reduce((sum, count) => sum + count, 0),
 
-      : 0,
+      avgScoreDiff: playerScores[key].length > 0
 
-    careerBest: playerScores[name].length > 0
+        ? Math.round(playerScores[key].reduce((sum, score) => sum + score, 0) / playerScores[key].length)
 
-      ? Math.max(...playerScores[name])
+        : 0,
 
-      : 0,
+      personalBest: ranks.length > 0 ? Math.min(...ranks) : null,
 
-    careerWorst: playerScores[name].length > 0
+      personalWorst: ranks.length > 0 ? Math.max(...ranks) : null,
 
-      ? Math.min(...playerScores[name])
+    };
 
-      : 0,
-
-  })).sort((a, b) => b.totalTournaments - a.totalTournaments);
+  }).sort((a, b) => b.totalTournaments - a.totalTournaments);
 
 
 
@@ -688,13 +730,9 @@ function HistoricalFinishesTab({ tournaments }: HistoricalFinishesTabProps) {
 
                 <th className="w-12 px-2 py-2 text-center border-r border-gray-200">6th</th>
 
-                <th className="w-12 px-2 py-2 text-center border-r border-gray-200">7th</th>
+                <th className="w-16 px-2 py-2 text-center border-r border-gray-200 bg-green-100" title="Personal best finish">PB</th>
 
-                <th className="w-12 px-2 py-2 text-center border-r border-gray-200">8th</th>
-
-                <th className="w-16 px-2 py-2 text-center border-r border-gray-200 bg-green-100">PB</th>
-
-                <th className="w-16 px-2 py-2 text-center bg-red-100">PW</th>
+                <th className="w-16 px-2 py-2 text-center bg-red-100" title="Personal worst finish">PW</th>
 
               </tr>
 
@@ -748,7 +786,7 @@ function HistoricalFinishesTab({ tournaments }: HistoricalFinishesTabProps) {
 
                     <span className="text-xs font-semibold text-green-700">
 
-                      {player.careerBest >= 0 ? '+' : ''}{player.careerBest}
+                      {player.personalBest ?? '-'}
 
                     </span>
 
@@ -758,7 +796,7 @@ function HistoricalFinishesTab({ tournaments }: HistoricalFinishesTabProps) {
 
                     <span className="text-xs font-semibold text-red-700">
 
-                      {player.careerWorst >= 0 ? '+' : ''}{player.careerWorst}
+                      {player.personalWorst ?? '-'}
 
                     </span>
 
@@ -776,11 +814,6 @@ function HistoricalFinishesTab({ tournaments }: HistoricalFinishesTabProps) {
 
 
 
-        <div className="mt-2 text-center">
-
-          <p className="text-xs text-gray-500">← Scroll horizontally to see positions 5-8 →</p>
-
-        </div>
 
       </div>
 

@@ -91,6 +91,26 @@ export function normalizeName(name: string): string {
   return name.trim();
 }
 
+export function nameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+export function namesMatch(a: string, b: string): boolean {
+  return nameKey(a) === nameKey(b);
+}
+
+export function pickDisplayName(current: string, next: string): string {
+  const a = normalizeName(current);
+  const b = normalizeName(next);
+  if (!a) return b;
+  if (!b) return a;
+  const hasLeadingCap = (value: string) =>
+    value.length > 0 && value[0] === value[0].toUpperCase() && value[0] !== value[0].toLowerCase();
+  if (hasLeadingCap(b) && !hasLeadingCap(a)) return b;
+  if (hasLeadingCap(a) && !hasLeadingCap(b)) return a;
+  return normalizeName(b.length > a.length ? b : a);
+}
+
 export function getTeamLabel(teamId: number): TeamLabel {
   return TEAM_LABELS[teamId - 1] ?? 'A';
 }
@@ -376,10 +396,101 @@ export function getTeamDisplayName(tournament: Tournament, teamId: number): stri
   return `Team ${team.label}: ${p1} & ${p2}`;
 }
 
+export interface TeamMatchSummary {
+  matchId: number;
+  opponentTeamId: number;
+  opponentLabel: TeamLabel;
+  teamScore: number | null;
+  opponentScore: number | null;
+  completed: boolean;
+  won: boolean | null;
+}
+
+export function getTeamMatchSummaries(tournament: Tournament, teamId: number): TeamMatchSummary[] {
+  return tournament.matches
+    .filter((match) => match.teamAId === teamId || match.teamBId === teamId)
+    .sort((a, b) => a.id - b.id)
+    .map((match) => {
+      const isTeamA = match.teamAId === teamId;
+      const opponentTeamId = isTeamA ? match.teamBId : match.teamAId;
+      const teamScore = isTeamA ? match.scoreA : match.scoreB;
+      const opponentScore = isTeamA ? match.scoreB : match.scoreA;
+      let won: boolean | null = null;
+      if (match.completed && teamScore != null && opponentScore != null) {
+        won = teamScore > opponentScore;
+      }
+      return {
+        matchId: match.id,
+        opponentTeamId,
+        opponentLabel: getTeamLabel(opponentTeamId),
+        teamScore,
+        opponentScore,
+        completed: match.completed,
+        won,
+      };
+    });
+}
+
 export function generateTournamentId(): string {
   return Math.random().toString(36).substr(2, 9);
 }
 
 export function isTournamentComplete(tournament: Tournament): boolean {
   return tournament.matches.every((match) => match.completed);
+}
+
+export function getMatchPlayerIds(match: Match): number[] {
+  return [match.teamA.player1, match.teamA.player2, match.teamB.player1, match.teamB.player2];
+}
+
+export function matchesShareParticipants(a: Match, b: Match): boolean {
+  const playersA = new Set(getMatchPlayerIds(a));
+  return getMatchPlayerIds(b).some((playerId) => playersA.has(playerId));
+}
+
+export function matchesConflictWithAny(match: Match, others: Match[]): boolean {
+  return others.some((other) => matchesShareParticipants(match, other));
+}
+
+/**
+ * Pick up to two incomplete matches for desktop spotlight.
+ * Prefer no shared players; if none qualify after scanning the queue, fill with the next match anyway.
+ */
+export function getDesktopSpotlightMatches(
+  matches: Match[],
+  maxSpotlight = 2
+): { spotlight: Match[]; deferred: Match[] } {
+  const incomplete = [...matches]
+    .filter((m) => !m.completed)
+    .sort((a, b) => a.id - b.id);
+
+  const spotlight: Match[] = [];
+  const deferred: Match[] = [];
+
+  for (const match of incomplete) {
+    if (spotlight.length >= maxSpotlight) {
+      deferred.push(match);
+      continue;
+    }
+    if (matchesConflictWithAny(match, spotlight)) {
+      deferred.push(match);
+      continue;
+    }
+    spotlight.push(match);
+  }
+
+  if (spotlight.length < maxSpotlight && deferred.length > 0) {
+    const overflow: Match[] = [];
+    for (const match of deferred) {
+      if (spotlight.length < maxSpotlight) {
+        spotlight.push(match);
+      } else {
+        overflow.push(match);
+      }
+    }
+    deferred.length = 0;
+    deferred.push(...overflow);
+  }
+
+  return { spotlight, deferred };
 }

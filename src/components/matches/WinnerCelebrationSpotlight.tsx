@@ -1,6 +1,6 @@
 'use client';
 
-import { Tournament, Team, getTeamLabel } from '@/lib/gameLogic';
+import { Tournament, Team } from '@/lib/gameLogic';
 import { TrophyIcon } from '@heroicons/react/24/solid';
 
 const BALLOON_LAYOUT = [
@@ -31,24 +31,19 @@ function WinnerCard({
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
 
   return (
-    <div className="winner-celebration-team flex items-center gap-5 rounded-xl border border-amber-200 bg-white px-8 py-6 shadow-md">
-      <div className="flex h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center rounded-xl bg-slate-800 text-2xl font-extrabold text-white">
-        {getTeamLabel(team.id)}
+    <div className="team-standings-row team-standings-row-leader winner-celebration-standing-row">
+      <div className="team-standings-rank">{team.rank}</div>
+      <div className="team-standings-badge">{team.label}</div>
+      <div className="team-standings-players min-w-0">
+        <div className="team-standings-player truncate">{getPlayerName(team.player1Id)}</div>
+        <div className="team-standings-player truncate">{getPlayerName(team.player2Id)}</div>
       </div>
-      <div className="min-w-0 text-left">
-        <div className="text-2xl font-bold leading-snug text-gray-900">
-          {getPlayerName(team.player1Id)}
-        </div>
-        <div className="text-2xl font-bold leading-snug text-gray-900">
-          {getPlayerName(team.player2Id)}
-        </div>
-        <div className="mt-2 text-lg font-bold tabular-nums text-gray-600">
-          {team.wins}-{team.losses}
-          <span className="ml-2 text-green-700">
-            {team.pointDiff > 0 ? '+' : ''}
-            {team.pointDiff}
-          </span>
-        </div>
+      <div className="team-standings-record">
+        {team.wins}-{team.losses}
+      </div>
+      <div className="team-standings-points">
+        {team.pointDiff > 0 ? '+' : ''}
+        {team.pointDiff}
       </div>
     </div>
   );
@@ -103,9 +98,7 @@ export default function WinnerCelebrationSpotlight({
 
           <div
             className={
-              isTie
-                ? 'grid min-w-0 flex-1 grid-cols-2 gap-5'
-                : 'min-w-0 flex-1 max-w-2xl'
+              isTie ? 'winner-celebration-winners winner-celebration-winners-tie' : 'winner-celebration-winners'
             }
           >
             {winners.map((team) => (

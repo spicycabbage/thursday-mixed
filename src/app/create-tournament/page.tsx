@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserGroupIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageShell } from '@/components/PageShell';
-import { DEFAULT_PLAYER_NAMES, TEAM_LABELS, NUM_TEAMS, createTournament } from '@/lib/gameLogic';
+import { DEFAULT_PLAYER_NAMES, TEAM_LABELS, NUM_TEAMS, createTournament, nameKey, normalizeName } from '@/lib/gameLogic';
 
 interface TeamInput {
   player1: string;
@@ -47,16 +47,17 @@ export default function CreateTournamentPage() {
       [team.player1, team.player2]
         .filter((_, si) => ti !== excludeTeam || si !== excludeSlot)
         .filter((n) => n.trim())
-        .map((n) => n.toLowerCase())
+        .map((n) => nameKey(n))
     );
 
   const getFilteredSuggestions = (value: string, teamIndex: number, slot: number) => {
     if (value.length < 1) return [];
     const usedNames = getAllUsedNames(teamIndex, slot);
+    const valueKey = nameKey(value);
     return DEFAULT_PLAYER_NAMES.filter(
       (name) =>
-        name.toLowerCase().startsWith(value.toLowerCase()) &&
-        !usedNames.includes(name.toLowerCase())
+        nameKey(name).startsWith(valueKey) &&
+        !usedNames.includes(nameKey(name))
     ).slice(0, 3);
   };
 
@@ -83,11 +84,15 @@ export default function CreateTournamentPage() {
   const handleStartTournament = async () => {
     if (filledCount !== NUM_TEAMS * 2 || isCreating) return;
     setIsCreating(true);
+    const normalizedTeams = teams.map((team) => ({
+      player1: normalizeName(team.player1),
+      player2: normalizeName(team.player2),
+    }));
     try {
       const res = await fetch('/api/tournaments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teams, date: tournamentDate }),
+        body: JSON.stringify({ teams: normalizedTeams, date: tournamentDate }),
       });
       if (res.status === 409) {
         alert('An active tournament already exists. Please finalize it first, or use it.');
@@ -98,7 +103,7 @@ export default function CreateTournamentPage() {
       if (res.ok) {
         tournament = await res.json();
       } else if (res.status === 500) {
-        tournament = createTournament(teams, tournamentDate);
+        tournament = createTournament(normalizedTeams, tournamentDate);
       } else {
         throw new Error('Failed to create tournament');
       }
@@ -169,7 +174,11 @@ export default function CreateTournamentPage() {
                           newSuggestions[teamIndex][slot] = getFilteredSuggestions(val, teamIndex, slot);
                           setSuggestions(newSuggestions);
                         }}
-                        onBlur={() => {
+                        onBlur={(e) => {
+                          const trimmed = normalizeName(e.target.value);
+                          if (trimmed !== e.target.value) {
+                            handlePlayerChange(teamIndex, slot, trimmed);
+                          }
                           setTimeout(() => {
                             const newSuggestions = [...suggestions];
                             newSuggestions[teamIndex] = [[], []];

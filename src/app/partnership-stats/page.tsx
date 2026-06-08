@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { UserGroupIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageLoading, PageShell } from '@/components/PageShell';
+import { namesMatch } from '@/lib/gameLogic';
 
 interface PartnershipStats {
   totalGames: number;
@@ -61,7 +62,7 @@ function PartnershipStatsContent() {
       return;
     }
 
-    if (player1 === player2) {
+    if (namesMatch(player1, player2)) {
       setError('Players cannot be the same person');
       return;
     }

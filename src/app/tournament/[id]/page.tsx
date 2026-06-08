@@ -210,12 +210,12 @@ export default function TournamentPage() {
   };
 
   if (loading) {
-    return <PageLoading message="Loading tournament..." />;
+    return <PageLoading message="Loading tournament..." className="page-shell-tournament" />;
   }
 
   if (!tournament) {
     return (
-      <PageShell centered>
+      <PageShell centered className="page-shell-tournament">
         <div className="text-white text-xl text-center px-6">
           <p>Tournament not found</p>
           <Link href="/" className="text-blue-200 underline mt-4 block">
@@ -234,7 +234,7 @@ export default function TournamentPage() {
       : 'Edit players';
 
   return (
-    <PageShell className="relative !min-h-0">
+    <PageShell className="page-shell-tournament relative !min-h-0">
       <div className="tournament-shell">
         <TournamentHeader
           date={tournament.date}

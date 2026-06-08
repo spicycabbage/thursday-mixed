@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ensureSchema, sql } from '@/lib/db';
 import { analyticsCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
+import { nameKey, normalizeName, pickDisplayName } from '@/lib/gameLogic';
 
 interface HeadToHeadRecord {
   opponent: string;
@@ -16,14 +17,15 @@ export async function POST(req: Request) {
     await ensureSchema();
     const { playerName, year } = await req.json();
     
-    if (!playerName) {
+    if (!playerName?.trim()) {
       return NextResponse.json({ error: 'Player name is required' }, { status: 400 });
     }
-    
+
+    const normalizedPlayerName = normalizeName(playerName);
     const yearFilter = year || 'all';
     
     // Check cache
-    const cacheKey = `${CACHE_KEYS.HEAD_TO_HEAD(playerName)}:${yearFilter}`;
+    const cacheKey = `${CACHE_KEYS.HEAD_TO_HEAD(nameKey(normalizedPlayerName))}:${yearFilter}`;
     const cachedRecords = analyticsCache.get<HeadToHeadRecord[]>(cacheKey);
     if (cachedRecords) {
       return NextResponse.json(cachedRecords);
@@ -68,10 +70,10 @@ export async function POST(req: Request) {
           m.team_b_p1,
           m.team_b_p2,
           p_main.id as player_id,
-          TRIM(p_opp.name) as opponent_name
+          p_opp.name as opponent_name
         FROM matches m
-        JOIN players p_main ON m.tournament_id = p_main.tournament_id AND TRIM(p_main.name) = ${playerName.trim()}
-        JOIN players p_opp ON m.tournament_id = p_opp.tournament_id AND TRIM(p_opp.name) != ${playerName.trim()}
+        JOIN players p_main ON m.tournament_id = p_main.tournament_id AND lower(trim(p_main.name)) = ${nameKey(normalizedPlayerName)}
+        JOIN players p_opp ON m.tournament_id = p_opp.tournament_id AND lower(trim(p_opp.name)) != ${nameKey(normalizedPlayerName)}
         WHERE m.tournament_id = ANY(${tournamentIds})
           AND m.completed = true 
           AND m.winner_team IS NOT NULL
@@ -99,13 +101,18 @@ export async function POST(req: Request) {
     `;
 
     // Aggregate by opponent
-    const opponentStats = new Map<string, { wins: number; losses: number; totalMargin: number }>();
+    const opponentStats = new Map<
+      string,
+      { wins: number; losses: number; totalMargin: number; displayName: string }
+    >();
     
     for (const row of headToHeadData) {
-      if (!opponentStats.has(row.opponent_name)) {
-        opponentStats.set(row.opponent_name, { wins: 0, losses: 0, totalMargin: 0 });
+      const key = nameKey(row.opponent_name);
+      if (!opponentStats.has(key)) {
+        opponentStats.set(key, { wins: 0, losses: 0, totalMargin: 0, displayName: row.opponent_name });
       }
-      const stats = opponentStats.get(row.opponent_name)!;
+      const stats = opponentStats.get(key)!;
+      stats.displayName = pickDisplayName(stats.displayName, row.opponent_name);
       if (row.player_won) {
         stats.wins++;
       } else {
@@ -115,14 +122,14 @@ export async function POST(req: Request) {
     }
 
     const headToHeadRecords: HeadToHeadRecord[] = [];
-    for (const [opponent, stats] of opponentStats.entries()) {
+    for (const [, stats] of opponentStats.entries()) {
       const totalMatches = stats.wins + stats.losses;
       if (totalMatches > 0) {
         const winPercentage = Math.round((stats.wins / totalMatches) * 100);
         const avgMargin = Math.round((stats.totalMargin / totalMatches) * 10) / 10;
         
         headToHeadRecords.push({
-          opponent,
+          opponent: stats.displayName,
           wins: stats.wins,
           losses: stats.losses,
           totalMatches,

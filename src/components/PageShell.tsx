@@ -84,11 +84,12 @@ export function PageTitleBlock({ title, subtitle }: PageTitleBlockProps) {
 
 interface PageLoadingProps {
   message?: string;
+  className?: string;
 }
 
-export function PageLoading({ message = 'Loading...' }: PageLoadingProps) {
+export function PageLoading({ message = 'Loading...', className = '' }: PageLoadingProps) {
   return (
-    <PageShell centered>
+    <PageShell centered className={className}>
       <div className="text-white text-xl">{message}</div>
     </PageShell>
   );

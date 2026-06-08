@@ -16,6 +16,8 @@ import {
 
   updateMatchScore,
 
+  normalizeName,
+
 } from '@/lib/gameLogic';
 
 
@@ -140,7 +142,7 @@ function buildTournamentFromRows(
 
     id: p.id,
 
-    name: p.name,
+    name: normalizeName(p.name),
 
     teamId: p.team_id || getTeamIdForPlayer(p.id),
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Tournament, TEAM_LABELS } from '@/lib/gameLogic';
+import { Tournament, TEAM_LABELS, normalizeName } from '@/lib/gameLogic';
 import { PencilIcon } from '@heroicons/react/24/outline';
 
 interface PlayerListEditorProps {
@@ -45,7 +45,12 @@ export default function PlayerListEditor({
   }, [tournament, isEditing]);
 
   const handleSaveEdit = () => {
-    onUpdateTeams(editedTeams);
+    onUpdateTeams(
+      editedTeams.map((team) => ({
+        player1: normalizeName(team.player1),
+        player2: normalizeName(team.player2),
+      }))
+    );
     setIsEditing(false);
     onClose?.();
   };
@@ -98,6 +103,14 @@ export default function PlayerListEditor({
                       next[index] = { ...next[index], player1: e.target.value };
                       setEditedTeams(next);
                     }}
+                    onBlur={(e) => {
+                      const trimmed = normalizeName(e.target.value);
+                      if (trimmed !== e.target.value) {
+                        const next = [...editedTeams];
+                        next[index] = { ...next[index], player1: trimmed };
+                        setEditedTeams(next);
+                      }
+                    }}
                     className="app-input"
                     placeholder="Player 1"
                   />
@@ -108,6 +121,14 @@ export default function PlayerListEditor({
                       const next = [...editedTeams];
                       next[index] = { ...next[index], player2: e.target.value };
                       setEditedTeams(next);
+                    }}
+                    onBlur={(e) => {
+                      const trimmed = normalizeName(e.target.value);
+                      if (trimmed !== e.target.value) {
+                        const next = [...editedTeams];
+                        next[index] = { ...next[index], player2: trimmed };
+                        setEditedTeams(next);
+                      }
                     }}
                     className="app-input"
                     placeholder="Player 2"
