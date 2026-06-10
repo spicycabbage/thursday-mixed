@@ -77,6 +77,10 @@ export function ensureSchema(): Promise<void> {
       // Columns might already exist
     }
 
+    await sql`alter table tournaments enable row level security`;
+    await sql`alter table players enable row level security`;
+    await sql`alter table matches enable row level security`;
+
     try {
       await sql`create index if not exists idx_players_tournament_name on players(tournament_id, name)`;
       await sql`create index if not exists idx_matches_tournament_completed on matches(tournament_id, completed)`;
