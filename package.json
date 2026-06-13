@@ -1,5 +1,5 @@
 {
-  "name": "fribadminton",
+  "name": "thursday-mixed",
   "version": "1.0.0",
   "description": "A mobile-optimized PWA for scoring doubles badminton tournaments with 8 players across 7 rounds.",
   "main": "next.config.js",
