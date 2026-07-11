@@ -538,7 +538,7 @@
 
   .page-shell:not(.page-shell-home) .registration-team-fields {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 0.5rem;
   }
 

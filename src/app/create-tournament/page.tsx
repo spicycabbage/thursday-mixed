@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserGroupIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageShell } from '@/components/PageShell';
@@ -117,6 +117,41 @@ export default function CreateTournamentPage() {
     }
   };
 
+  const focusPlayerInput = (teamIndex: number, slot: 0 | 1) => {
+    document
+      .querySelector<HTMLInputElement>(
+        `input[data-registration-player="${teamIndex}-${slot}"]`
+      )
+      ?.focus();
+  };
+
+  const focusNextPlayerInput = (teamIndex: number, slot: 0 | 1) => {
+    if (slot === 0) {
+      focusPlayerInput(teamIndex, 1);
+      return;
+    }
+    if (teamIndex < teams.length - 1) {
+      focusPlayerInput(teamIndex + 1, 0);
+    }
+  };
+
+  const handlePlayerKeyDown = (
+    e: KeyboardEvent<HTMLInputElement>,
+    teamIndex: number,
+    slot: 0 | 1
+  ) => {
+    if (e.key !== 'Tab' || e.shiftKey) return;
+
+    const slotSuggestions = suggestions[teamIndex]?.[slot] ?? [];
+    if (slotSuggestions.length === 0) return;
+
+    e.preventDefault();
+    const newSuggestions = [...suggestions];
+    newSuggestions[teamIndex] = [[], []];
+    setSuggestions(newSuggestions);
+    focusNextPlayerInput(teamIndex, slot);
+  };
+
   const isStartDisabled = filledCount < NUM_TEAMS * 2;
 
   return (
@@ -164,8 +199,10 @@ export default function CreateTournamentPage() {
                     <div key={slot} className="relative">
                       <input
                         type="text"
+                        data-registration-player={`${teamIndex}-${slot}`}
                         value={slot === 0 ? team.player1 : team.player2}
                         onChange={(e) => handlePlayerChange(teamIndex, slot, e.target.value)}
+                        onKeyDown={(e) => handlePlayerKeyDown(e, teamIndex, slot)}
                         maxLength={12}
                         onFocus={() => {
                           const val = slot === 0 ? team.player1 : team.player2;
@@ -195,6 +232,7 @@ export default function CreateTournamentPage() {
                             <button
                               key={suggestion}
                               type="button"
+                              tabIndex={-1}
                               onClick={() => handleSuggestionClick(teamIndex, slot, suggestion)}
                               className="w-full px-3 py-2 text-left hover:bg-blue-50"
                             >
