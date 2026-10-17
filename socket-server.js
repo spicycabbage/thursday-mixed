@@ -8,17 +8,38 @@ const PORT = process.env.PORT || 4000;
 
 const tournamentsById = new Map();
 
+// Only the app's own origins may connect. Extra origins (comma-separated) can be
+// added with SOCKET_ALLOWED_ORIGINS, e.g. a custom domain.
+const ALLOWED_ORIGINS = new Set([
+  'https://thursday-mixed.vercel.app',
+  'http://localhost:3000',
+  ...(process.env.SOCKET_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
+]);
+const PREVIEW_ORIGIN = /^https:\/\/thursday-mixed-[a-z0-9-]+\.vercel\.app$/;
+
+function isAllowedOrigin(origin) {
+  return !!origin && (ALLOWED_ORIGINS.has(origin) || PREVIEW_ORIGIN.test(origin));
+}
+
 const server = http.createServer((req, res) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/plain',
-    'Access-Control-Allow-Origin': '*',
-  });
+  const headers = { 'Content-Type': 'text/plain', Vary: 'Origin' };
+  if (isAllowedOrigin(req.headers.origin)) {
+    headers['Access-Control-Allow-Origin'] = req.headers.origin;
+  }
+  res.writeHead(200, headers);
   res.end('Socket server is running.\n');
 });
 
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: (origin, callback) => {
+      // Non-browser clients send no Origin header; allow those.
+      if (!origin || isAllowedOrigin(origin)) return callback(null, true);
+      return callback(new Error('Origin not allowed'), false);
+    },
     methods: ['GET', 'POST'],
   },
 });
