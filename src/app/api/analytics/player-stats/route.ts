@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureSchema, sql } from '@/lib/db';
+import { sql } from '@/lib/db';
 import { analyticsCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
+import { isEventType } from '@/lib/gameLogic';
 
 interface PlayerStats {
   name: string;
@@ -12,13 +13,13 @@ interface PlayerStats {
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureSchema();
-    
     const searchParams = request.nextUrl.searchParams;
     const year = searchParams.get('year') || 'all';
+    const eventParam = searchParams.get('event');
+    const event = eventParam && isEventType(eventParam) ? eventParam : 'all';
     
     // Check cache first
-    const cacheKey = `${CACHE_KEYS.PLAYER_STATS}:${year}`;
+    const cacheKey = `${CACHE_KEYS.PLAYER_STATS}:${year}:${event}`;
     const cachedStats = analyticsCache.get<PlayerStats[]>(cacheKey);
     if (cachedStats) {
       return NextResponse.json(cachedStats, {
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
     
     const yearFilter =
       year !== 'all' && /^\d{4}$/.test(year) ? sql`AND t.date LIKE ${`${year}-%`}` : sql``;
+    const eventFilter = event === 'all' ? sql`` : sql`AND t.event_type = ${event}`;
 
     const playerStats = await sql<{
       name: string;
@@ -49,6 +51,7 @@ export async function GET(request: NextRequest) {
           AND m.completed = true
           AND m.winner_team IS NOT NULL
           ${yearFilter}
+          ${eventFilter}
 
         UNION ALL
 
@@ -64,6 +67,7 @@ export async function GET(request: NextRequest) {
           AND m.completed = true
           AND m.winner_team IS NOT NULL
           ${yearFilter}
+          ${eventFilter}
       )
       SELECT
         (array_agg(raw_name ORDER BY length(raw_name) DESC, raw_name))[1] AS name,

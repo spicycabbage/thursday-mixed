@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Tournament, NUM_ROUNDS } from '@/lib/gameLogic';
+import { Tournament, getTournamentRoundCount } from '@/lib/gameLogic';
 import TabPanel from '@/components/TabPanel';
 import { TrophyIcon } from '@heroicons/react/24/outline';
 import MatchCard from '@/components/matches/MatchCard';
@@ -44,7 +44,7 @@ export default function MatchesTab({ tournament, onScoreUpdate, onFinalize }: Ma
 
   const roundToolbar = (
     <div className="round-nav">
-      {Array.from({ length: NUM_ROUNDS }, (_, i) => i + 1).map((round) => {
+      {Array.from({ length: getTournamentRoundCount(tournament.matches) }, (_, i) => i + 1).map((round) => {
         const status = getRoundStatus(round);
         const isSelected = round === selectedRound;
         const canSelect = canSelectRound(round);

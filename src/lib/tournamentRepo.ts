@@ -1,4 +1,4 @@
-import { ensureSchema, sql, DbTournamentRow } from '@/lib/db';
+import { sql, DbTournamentRow } from '@/lib/db';
 
 import {
 
@@ -14,9 +14,11 @@ import {
 
   getTeamIdForPlayer,
 
-  updateMatchScore,
+  recomputeAllStats,
 
   normalizeName,
+
+  eventTypeOf,
 
 } from '@/lib/gameLogic';
 
@@ -102,7 +104,17 @@ function buildTournamentFromRows(
 
 ): Tournament {
 
-  const teams: Team[] = Array.from({ length: 6 }, (_, i) => {
+  const teamCount = players.reduce((max, player) => {
+
+    const teamId = player.team_id || getTeamIdForPlayer(player.id);
+
+    return Math.max(max, teamId);
+
+  }, 0);
+
+
+
+  const teams: Team[] = Array.from({ length: teamCount }, (_, i) => {
 
     const teamId = i + 1;
 
@@ -194,6 +206,10 @@ function buildTournamentFromRows(
 
     id: tr.id,
 
+    name: tr.name ?? '',
+
+    eventType: eventTypeOf(tr.event_type),
+
     date: tr.date,
 
     teams,
@@ -212,15 +228,7 @@ function buildTournamentFromRows(
 
 
 
-  for (const m of tournament.matches) {
-
-    if (m.completed && m.scoreA != null && m.scoreB != null) {
-
-      tournament = updateMatchScore(tournament, m.id, m.scoreA, m.scoreB, true);
-
-    }
-
-  }
+  recomputeAllStats(tournament);
 
   tournament.currentRound = tr.current_round;
 
@@ -233,43 +241,50 @@ function buildTournamentFromRows(
 
 
 export async function assembleTournament(id: string): Promise<Tournament | null> {
+  const rows = await sql<{
+    tournament: DbTournamentRow;
+    players: Omit<DbPlayerRow, 'tournament_id'>[];
+    matches: Omit<DbMatchRow, 'tournament_id'>[];
+  }[]>`
+    select
+      to_jsonb(t) as tournament,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', p.id,
+          'name', p.name,
+          'team_id', coalesce(p.team_id, ceil(p.id::float / 2)::int),
+          'total_score', p.total_score
+        ) order by p.id)
+        from players p
+        where p.tournament_id = t.id
+      ), '[]'::jsonb) as players,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', m.id,
+          'round', m.round,
+          'court', coalesce(m.court, 1),
+          'team_a_id', coalesce(m.team_a_id, ceil(m.team_a_p1::float / 2)::int),
+          'team_b_id', coalesce(m.team_b_id, ceil(m.team_b_p1::float / 2)::int),
+          'team_a_p1', m.team_a_p1,
+          'team_a_p2', m.team_a_p2,
+          'team_b_p1', m.team_b_p1,
+          'team_b_p2', m.team_b_p2,
+          'score_a', m.score_a,
+          'score_b', m.score_b,
+          'completed', m.completed,
+          'winner_team', m.winner_team
+        ) order by m.id)
+        from matches m
+        where m.tournament_id = t.id
+      ), '[]'::jsonb) as matches
+    from tournaments t
+    where t.id = ${id}
+    limit 1
+  `;
 
-  await ensureSchema();
-
-  const rows = await sql<DbTournamentRow[]>`select * from tournaments where id=${id} limit 1`;
-
-  const tr = rows[0];
-
-  if (!tr) return null;
-
-
-
-  const players = await sql<Omit<DbPlayerRow, 'tournament_id'>[]>`
-
-    select id, name, coalesce(team_id, ceil(id::float / 2)::int) as team_id, total_score
-
-    from players where tournament_id=${id} order by id asc`;
-
-
-
-  const matches = await sql<Omit<DbMatchRow, 'tournament_id'>[]>`
-
-    select id, round, coalesce(court, 1) as court,
-
-      coalesce(team_a_id, ceil(team_a_p1::float / 2)::int) as team_a_id,
-
-      coalesce(team_b_id, ceil(team_b_p1::float / 2)::int) as team_b_id,
-
-      team_a_p1, team_a_p2, team_b_p1, team_b_p2,
-
-      score_a, score_b, completed, winner_team
-
-    from matches where tournament_id=${id} order by id asc`;
-
-
-
-  return buildTournamentFromRows(tr, players, matches);
-
+  const row = rows[0];
+  if (!row) return null;
+  return buildTournamentFromRows(row.tournament, row.players, row.matches);
 }
 
 

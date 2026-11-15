@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
-import { ensureSchema, sql } from '@/lib/db';
+import { sql } from '@/lib/db';
 import { assembleTournament } from '@/lib/tournamentRepo';
-import { validateScore, getWinnerTeam, NUM_ROUNDS } from '@/lib/gameLogic';
+import { validateScore, getWinnerTeam } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    await ensureSchema();
     const { matchId, scoreA, scoreB } = await req.json();
     if (!validateScore(Number(scoreA), Number(scoreB))) {
       return NextResponse.json({ error: 'Invalid score' }, { status: 400 });
@@ -27,7 +26,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (roundCompleted) {
       const [trow] = await sql<any[]>`select current_round from tournaments where id=${id}`;
       const currentRound = Number(trow?.current_round || 1);
-      if (currentRound === round && currentRound < NUM_ROUNDS) {
+      const [maxRow] = await sql<{ max_round: number }[]>`
+        select coalesce(max(round), 1)::int as max_round from matches where tournament_id=${id}`;
+      if (currentRound === round && currentRound < Number(maxRow?.max_round ?? 1)) {
         await sql`update tournaments set current_round=${currentRound + 1} where id=${id}`;
       }
     }

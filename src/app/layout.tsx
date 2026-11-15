@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Thursday Mixed',
-  description: '6-team round robin badminton tournament scoring',
+  title: 'Saturday Mixed',
+  description: 'Doubles badminton tournament scoring',
   manifest: '/manifest.json',
   icons: {
     icon: [
@@ -23,7 +24,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Thursday Mixed',
+    title: 'Saturday Mixed',
   },
 }
 
@@ -33,6 +34,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: 'cover',
+  themeColor: '#3b82f6',
 }
 
 export default function RootLayout({
@@ -46,8 +48,9 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
-      <body className={`${inter.className} bg-blue-600 min-h-screen`}>
-        <div className="min-h-screen flex flex-col">
+      <body className={`${inter.className} bg-blue-600 min-h-dvh`}>
+        <ServiceWorkerRegister />
+        <div className="min-h-dvh flex flex-col">
           {children}
         </div>
       </body>

@@ -1,9 +1,30 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { ChartBarIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageLoading, PageShell, PageTitleBlock } from '@/components/PageShell';
+import { EVENT_TYPE_LABELS, type EventType } from '@/lib/gameLogic';
+
+type AnalyticsTab = EventType | 'ALL';
+const ANALYTICS_TABS: AnalyticsTab[] = ['MD', 'WD', 'XD', 'ALL'];
+
+function statsCacheKey(tab: AnalyticsTab) {
+  return `analytics:player-stats:${tab}`;
+}
+
+interface PlayerMatch {
+  date: string;
+  tournamentName: string;
+  eventType: string;
+  round: number;
+  partner: string;
+  opponent1: string;
+  opponent2: string;
+  playerScore: number;
+  opponentScore: number;
+  won: boolean;
+}
 
 interface PlayerStats {
   name: string;
@@ -13,13 +34,15 @@ interface PlayerStats {
   winPercentage: number;
 }
 
-interface HeadToHeadRecord {
-  opponent: string;
-  wins: number;
-  losses: number;
-  totalMatches: number;
-  winPercentage: number;
-  avgMargin: number;
+function formatMatchDate(dateString: string) {
+  const [y, m, d] = dateString.split('-').map(Number);
+  const middayUtc = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+  return middayUtc.toLocaleDateString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function AnalyticsContent() {
@@ -27,21 +50,20 @@ function AnalyticsContent() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
-  const [headToHeadData, setHeadToHeadData] = useState<HeadToHeadRecord[]>([]);
-  const [loadingHeadToHead, setLoadingHeadToHead] = useState(false);
+  const [matches, setMatches] = useState<PlayerMatch[]>([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [eventTab, setEventTab] = useState<AnalyticsTab>('ALL');
 
-  const cacheKey = 'analytics:player-stats:all';
-
-  const fetchPlayerStats = async (attempt: number): Promise<PlayerStats[] | null> => {
+  const fetchPlayerStats = async (tab: AnalyticsTab, attempt: number): Promise<PlayerStats[] | null> => {
     const controller = new AbortController();
     const timeoutMs = attempt === 0 ? 30000 : 45000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(`/api/analytics/player-stats?year=all&t=${Date.now()}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
+      const response = await fetch(
+        `/api/analytics/player-stats?year=all&event=${tab}&t=${Date.now()}`,
+        { cache: 'no-store', signal: controller.signal }
+      );
       if (!response.ok) return null;
       return (await response.json()) as PlayerStats[];
     } finally {
@@ -49,7 +71,10 @@ function AnalyticsContent() {
     }
   };
 
-  const loadPlayerStats = async (opts?: { refresh?: boolean; hadCache?: boolean }) => {
+  const loadPlayerStats = async (
+    tab: AnalyticsTab,
+    opts?: { refresh?: boolean; hadCache?: boolean }
+  ) => {
     const isRefresh = opts?.refresh ?? false;
     const hadCache = opts?.hadCache ?? false;
 
@@ -59,7 +84,7 @@ function AnalyticsContent() {
     let stats: PlayerStats[] | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        stats = await fetchPlayerStats(attempt);
+        stats = await fetchPlayerStats(tab, attempt);
         if (stats) break;
       } catch {
         if (attempt === 1) break;
@@ -70,7 +95,7 @@ function AnalyticsContent() {
       setPlayerStats(stats);
       setLoadError(null);
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify(stats));
+        sessionStorage.setItem(statsCacheKey(tab), JSON.stringify(stats));
       } catch {}
     } else if (isRefresh) {
       setLoadError('Could not refresh analytics. Try again in a moment.');
@@ -83,9 +108,18 @@ function AnalyticsContent() {
   };
 
   useEffect(() => {
+    if (!selectedPlayer) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMatches();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedPlayer]);
+
+  useEffect(() => {
     let hadCache = false;
     try {
-      const cached = sessionStorage.getItem(cacheKey);
+      const cached = sessionStorage.getItem(statsCacheKey(eventTab));
       if (cached) {
         setPlayerStats(JSON.parse(cached) as PlayerStats[]);
         setLoading(false);
@@ -93,41 +127,63 @@ function AnalyticsContent() {
       }
     } catch {}
 
-    loadPlayerStats({ hadCache });
-  }, []);
+    loadPlayerStats(eventTab, { hadCache });
+  }, [eventTab]);
 
-  const loadHeadToHeadData = async (playerName: string) => {
-    setLoadingHeadToHead(true);
+  const loadPlayerMatches = async (playerName: string) => {
+    setSelectedPlayer(playerName);
+    setMatches([]);
+    setLoadingMatches(true);
     try {
-      // Add timestamp to bypass cache
-      const response = await fetch(`/api/analytics/head-to-head?t=${Date.now()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerName, year: 'all' }),
-        cache: 'no-store'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setHeadToHeadData(data);
-        setSelectedPlayer(playerName);
-      } else {
-        console.error('Failed to load head-to-head data:', response.status);
-      }
-    } catch (error) {
-      console.error('Error loading head-to-head data:', error);
-    }
-    setLoadingHeadToHead(false);
+      const eventQuery = eventTab === 'ALL' ? '' : `&event=${eventTab}`;
+      const response = await fetch(
+        `/api/analytics/player-matches?player=${encodeURIComponent(playerName)}${eventQuery}`,
+        { cache: 'no-store' }
+      );
+      if (response.ok) setMatches((await response.json()) as PlayerMatch[]);
+    } catch {}
+    setLoadingMatches(false);
   };
 
-  const closeHeadToHead = () => {
+  const closeMatches = () => {
     setSelectedPlayer(null);
-    setHeadToHeadData([]);
+    setMatches([]);
+  };
+
+  const selectTab = (tab: AnalyticsTab) => {
+    if (tab === eventTab) return;
+    closeMatches();
+    let cached: PlayerStats[] | null = null;
+    try {
+      const raw = sessionStorage.getItem(statsCacheKey(tab));
+      if (raw) cached = JSON.parse(raw) as PlayerStats[];
+    } catch {}
+    if (cached) {
+      setPlayerStats(cached);
+      setLoading(false);
+    } else {
+      setPlayerStats([]);
+      setLoading(true);
+    }
+    setEventTab(tab);
   };
 
   return (
     <PageShell>
       <PageCard>
+        <nav className="event-type-tabs event-type-tabs-4" aria-label="Event type">
+          {ANALYTICS_TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`event-type-tab ${eventTab === tab ? 'event-type-tab-active' : ''}`}
+              aria-current={eventTab === tab ? 'page' : undefined}
+              onClick={() => selectTab(tab)}
+            >
+              {tab}
+            </button>
+          ))}
+        </nav>
         <PageHeader
           title="Advanced Analytics"
           icon={<ChartBarIcon className="w-5 h-5" />}
@@ -136,12 +192,12 @@ function AnalyticsContent() {
         <PageContent>
           <PageTitleBlock
             title="Player Win-Loss Records"
-            subtitle="Statistics across all tournaments"
+            subtitle={eventTab === 'ALL' ? 'All events' : EVENT_TYPE_LABELS[eventTab]}
           />
           <div className="flex justify-center -mt-4 mb-4">
             <button
               type="button"
-              onClick={() => loadPlayerStats({ refresh: true })}
+              onClick={() => loadPlayerStats(eventTab, { refresh: true })}
               disabled={refreshing}
               className="text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50"
               title="Refresh data"
@@ -197,10 +253,11 @@ function AnalyticsContent() {
                     <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-semibold mr-3">
                       {index + 1}
                     </span>
-                    <button 
-                      onClick={() => loadHeadToHeadData(player.name)}
+                    <button
+                      type="button"
+                      onClick={() => loadPlayerMatches(player.name)}
                       className="font-semibold truncate text-left hover:text-blue-600 hover:underline transition-colors"
-                      disabled={loadingHeadToHead}
+                      disabled={loadingMatches}
                     >
                       {player.name}
                     </button>
@@ -232,81 +289,68 @@ function AnalyticsContent() {
         </PageContent>
       </PageCard>
 
-      {/* Head-to-Head Modal */}
       {selectedPlayer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-4 border-b bg-blue-50">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-800">
-                  {selectedPlayer}&apos;s Head-to-Head
+        <div
+          className="match-edit-modal-backdrop"
+          role="presentation"
+          onClick={closeMatches}
+        >
+          <div
+            className="team-summary-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="player-matches-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="match-edit-modal-header">
+              <div className="min-w-0">
+                <h3 id="player-matches-title" className="match-edit-modal-title">
+                  {selectedPlayer}
                 </h3>
-                <button
-                  onClick={closeHeadToHead}
-                  className="text-gray-500 hover:text-gray-700 text-xl font-bold"
-                >
-                  ×
-                </button>
+                <p className="team-summary-modal-players">
+                  {loadingMatches ? 'Loading matches…' : `${matches.length} matches`}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={closeMatches}
+                className="match-edit-modal-close"
+                aria-label="Close"
+              >
+                ×
+              </button>
             </div>
-
-            {/* Modal Content */}
-            <div className="p-4 overflow-y-auto max-h-[60vh]">
-              {loadingHeadToHead ? (
-                <div className="text-center py-8">
-                  <div className="text-gray-600">Loading head-to-head data...</div>
-                </div>
-              ) : headToHeadData.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="text-gray-600">No head-to-head data available</div>
-                </div>
+            <div className="team-summary-modal-body">
+              {loadingMatches ? null : matches.length === 0 ? (
+                <p className="text-sm font-semibold text-gray-500">No completed matches</p>
               ) : (
-                <div className="space-y-3">
-                  {/* Header */}
-                  <div className="grid grid-cols-[2fr_0.8fr_0.8fr_1fr_1.2fr] gap-1 px-2 py-2 bg-gray-100 rounded text-xs font-semibold text-gray-600">
-                    <div>Opponent</div>
-                    <div className="text-center">W</div>
-                    <div className="text-center">L</div>
-                    <div className="text-center">Win%</div>
-                    <div className="text-center">Margin</div>
-                  </div>
-
-                  {/* Head-to-Head Records */}
-                  {headToHeadData.map((record) => (
-                    <div key={record.opponent} className="grid grid-cols-[2fr_0.8fr_0.8fr_1fr_1.2fr] gap-1 px-2 py-2 bg-gray-50 rounded items-center">
-                      <div className="font-semibold truncate">{record.opponent}</div>
-                      <div className="text-center font-semibold text-green-600">{record.wins}</div>
-                      <div className="text-center font-semibold text-red-600">{record.losses}</div>
-                      <div className="text-center">
-                        <span className={`font-semibold ${
-                          record.winPercentage >= 70 ? 'text-green-600' :
-                          record.winPercentage >= 50 ? 'text-yellow-600' :
-                          'text-red-600'
-                        }`}>
-                          {record.winPercentage}%
+                <ul className="team-summary-match-list">
+                  {matches.map((match, index) => (
+                    <li
+                      key={`${match.date}-${match.round}-${index}`}
+                      className={`team-summary-match-row ${
+                        match.won ? 'team-summary-match-win' : 'team-summary-match-loss'
+                      }`}
+                    >
+                      <div className="team-summary-match-main">
+                        <span className="text-xs font-bold text-gray-500">
+                          {match.eventType} · {formatMatchDate(match.date)}
+                          {match.tournamentName.trim() ? ` · ${match.tournamentName.trim()}` : ''}
                         </span>
-                      </div>
-                      <div className="text-center">
-                        <span className={`font-semibold ${
-                          record.avgMargin > 0 ? 'text-green-600' :
-                          record.avgMargin < 0 ? 'text-red-600' :
-                          'text-gray-600'
-                        }`}>
-                          {record.avgMargin > 0 ? '+' : ''}{record.avgMargin}
+                        <span className="team-summary-match-opponent">
+                          vs {match.opponent1} & {match.opponent2}
                         </span>
+                        <span className="text-xs font-semibold text-gray-600">with {match.partner}</span>
                       </div>
-                    </div>
+                      <div className="team-summary-match-result">
+                        <span className="team-summary-match-score">
+                          {match.playerScore}-{match.opponentScore}
+                        </span>
+                        <span className="team-summary-match-outcome">{match.won ? 'W' : 'L'}</span>
+                      </div>
+                    </li>
                   ))}
-
-                  {/* Summary */}
-                  <div className="mt-4 p-3 bg-blue-50 rounded">
-                    <div className="text-sm text-blue-700">
-                      <p>• Total Opponents: {headToHeadData.length}</p>
-                      <p>• Best Record: {headToHeadData.length > 0 ? `${headToHeadData[0].wins}-${headToHeadData[0].losses} vs ${headToHeadData[0].opponent}` : 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
+                </ul>
               )}
             </div>
           </div>

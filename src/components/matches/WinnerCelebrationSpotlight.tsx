@@ -1,7 +1,7 @@
 'use client';
 
+import { useId } from 'react';
 import { Tournament, Team } from '@/lib/gameLogic';
-import { TrophyIcon } from '@heroicons/react/24/solid';
 
 const BALLOON_LAYOUT = [
   { left: '4%', bottom: '12%', color: '#ef4444', delay: '0s', size: 36 },
@@ -15,9 +15,96 @@ const BALLOON_LAYOUT = [
   { left: '58%', bottom: '22%', color: '#6366f1', delay: '0.3s', size: 34 },
 ] as const;
 
+function CelebrationBalloon({ color }: { color: string }) {
+  const id = useId().replace(/:/g, '');
+
+  return (
+    <svg viewBox="0 0 100 214" className="winner-celebration-balloon-svg" aria-hidden>
+      <defs>
+        <radialGradient id={`${id}-body`} cx="32%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#fff" stopOpacity="0.95" />
+          <stop offset="16%" stopColor={color} stopOpacity="0.95" />
+          <stop offset="58%" stopColor={color} />
+          <stop offset="100%" stopColor="#1e293b" stopOpacity="0.55" />
+        </radialGradient>
+        <linearGradient id={`${id}-string`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#94a3b8" />
+          <stop offset="100%" stopColor="#64748b" stopOpacity="0.2" />
+        </linearGradient>
+      </defs>
+      <ellipse cx="50" cy="62" rx="40" ry="52" fill={`url(#${id}-body)`} />
+      <ellipse cx="34" cy="42" rx="10" ry="18" fill="#fff" opacity="0.42" transform="rotate(-28 34 42)" />
+      <path d="M44 112c2 6 10 8 12 4 2-4 4-8 0-10-3 2-8 2-12 6z" fill={color} opacity="0.9" />
+      <path
+        d="M50 118c8 16-14 28-4 46 8 14-12 24-2 40"
+        fill="none"
+        stroke={`url(#${id}-string)`}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function CelebrationTrophy({ className = 'h-28 w-28 shrink-0' }: { className?: string }) {
+  const id = useId().replace(/:/g, '');
+  const metal = `${id}-metal`;
+  const cup = `${id}-cup`;
+  const shine = `${id}-shine`;
+
+  return (
+    <svg viewBox="0 0 128 128" className={className} aria-hidden>
+      <defs>
+        <linearGradient id={metal} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#fff6d0" />
+          <stop offset="22%" stopColor="#f0c14b" />
+          <stop offset="48%" stopColor="#b7791f" />
+          <stop offset="70%" stopColor="#ffe08a" />
+          <stop offset="100%" stopColor="#8a5a08" />
+        </linearGradient>
+        <linearGradient id={cup} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#fff4c4" />
+          <stop offset="28%" stopColor="#f6c453" />
+          <stop offset="62%" stopColor="#c4841d" />
+          <stop offset="100%" stopColor="#7c4a09" />
+        </linearGradient>
+        <radialGradient id={shine} cx="34%" cy="30%" r="60%">
+          <stop offset="0%" stopColor="#fff" stopOpacity="0.9" />
+          <stop offset="45%" stopColor="#fff" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <path
+        d="M36 40c-18 2-24 20-16 32 5 8 16 10 22 4"
+        fill="none"
+        stroke={`url(#${metal})`}
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+      <path
+        d="M92 40c18 2 24 20 16 32-5 8-16 10-22 4"
+        fill="none"
+        stroke={`url(#${metal})`}
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+      <path
+        d="M38 30h52c1 20-4 38-14 50-6 8-12 11-12 11s-6-3-12-11C42 68 37 50 38 30z"
+        fill={`url(#${cup})`}
+      />
+      <ellipse cx="64" cy="30" rx="26" ry="8" fill="#ffe7a3" />
+      <ellipse cx="64" cy="31" rx="18" ry="4.5" fill="#9a6412" opacity="0.35" />
+      <ellipse cx="52" cy="50" rx="12" ry="18" fill={`url(#${shine})`} />
+      <path d="M56 90h16l5 12H51z" fill={`url(#${metal})`} />
+      <rect x="42" y="100" width="44" height="8" rx="2" fill={`url(#${cup})`} />
+      <rect x="30" y="108" width="68" height="11" rx="3" fill="#a56b12" />
+      <rect x="30" y="108" width="68" height="4" rx="2" fill="#fff1c2" opacity="0.75" />
+    </svg>
+  );
+}
+
 interface WinnerCelebrationSpotlightProps {
   tournament: Tournament;
-  winners: Team[];
+  podium: Team[];
 }
 
 function WinnerCard({
@@ -29,9 +116,14 @@ function WinnerCard({
 }) {
   const getPlayerName = (playerId: number) =>
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
+  const place = team.rank === 1 ? 'leader' : `place-${team.rank}`;
 
   return (
-    <div className="team-standings-row team-standings-row-leader winner-celebration-standing-row">
+    <div
+      className={`team-standings-row winner-celebration-standing-row winner-celebration-${place} ${
+        team.rank === 1 ? 'team-standings-row-leader' : ''
+      }`}
+    >
       <div className="team-standings-rank">{team.rank}</div>
       <div className="team-standings-badge">{team.label}</div>
       <div className="team-standings-players min-w-0">
@@ -51,10 +143,11 @@ function WinnerCard({
 
 export default function WinnerCelebrationSpotlight({
   tournament,
-  winners,
+  podium,
 }: WinnerCelebrationSpotlightProps) {
-  const isTie = winners.length > 1;
-  const title = isTie ? 'Co-Champions!' : 'Winner!';
+  const firstPlace = podium.filter((team) => team.rank === 1);
+  const isTie = firstPlace.length > 1;
+  const title = isTie ? 'Co-Champions!' : 'Podium';
 
   return (
     <div className="winner-celebration-spotlight">
@@ -67,41 +160,32 @@ export default function WinnerCelebrationSpotlight({
               left: balloon.left,
               bottom: balloon.bottom,
               width: `${balloon.size}px`,
-              height: `${Math.round(balloon.size * 1.25)}px`,
-              backgroundColor: balloon.color,
               animationDelay: balloon.delay,
             }}
-          />
+          >
+            <CelebrationBalloon color={balloon.color} />
+          </div>
         ))}
       </div>
 
-      <div className="relative z-[1] flex min-h-[22rem] flex-col justify-center px-10 py-8 text-left">
-        <p className="mb-2.5 text-base font-bold uppercase tracking-widest text-amber-700">
+      <div className="relative z-[1] flex min-h-[22.5rem] flex-col justify-center px-8 py-7 text-left">
+        <p className="mb-2 text-lg font-bold uppercase tracking-widest text-amber-700">
           Tournament Complete
         </p>
-        <h2 className="mb-2.5 text-6xl font-black leading-none tracking-tight text-gray-900">
+        <h2 className="mb-2 text-6xl font-black leading-none tracking-tight text-gray-900">
           {title}
         </h2>
-        <p className="mb-6 text-xl font-semibold text-gray-500">
-          {isTie
-            ? `${winners.length} teams tied for first place`
-            : 'Congratulations to the champions'}
+        <p className="mb-5 text-2xl font-semibold text-gray-500">
+          {isTie ? `${firstPlace.length} teams tied for 1st` : '1st, 2nd, and 3rd'}
         </p>
 
         <div className="flex items-center gap-10">
-          <aside className="flex w-36 shrink-0 items-center justify-center self-stretch">
-            <TrophyIcon
-              className="h-28 w-28 shrink-0 text-amber-500"
-              style={{ filter: 'drop-shadow(0 6px 12px rgba(245, 158, 11, 0.45))' }}
-            />
+          <aside className="flex w-[8.6rem] shrink-0 items-center justify-center">
+            <CelebrationTrophy />
           </aside>
 
-          <div
-            className={
-              isTie ? 'winner-celebration-winners winner-celebration-winners-tie' : 'winner-celebration-winners'
-            }
-          >
-            {winners.map((team) => (
+          <div className="winner-celebration-winners">
+            {podium.map((team) => (
               <WinnerCard key={team.id} team={team} tournament={tournament} />
             ))}
           </div>

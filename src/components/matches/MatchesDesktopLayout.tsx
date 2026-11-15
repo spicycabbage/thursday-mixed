@@ -7,7 +7,6 @@ import {
   getRankedTeams,
   isTournamentComplete,
 } from '@/lib/gameLogic';
-import { TrophyIcon } from '@heroicons/react/24/outline';
 import TeamStandingsPanel from '@/components/TeamStandingsPanel';
 import MatchCard from '@/components/matches/MatchCard';
 import WinnerCelebrationSpotlight from '@/components/matches/WinnerCelebrationSpotlight';
@@ -24,13 +23,13 @@ export default function MatchesDesktopLayout({
   onScoreUpdate,
   onFinalize,
 }: MatchesDesktopLayoutProps) {
-  const [modalMatchId, setModalMatchId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+  const [modalMatchId, setModalMatchId] = useState<number | null>(null);
   const miniCarouselRef = useRef<HTMLDivElement>(null);
 
   const tournamentComplete = isTournamentComplete(tournament);
-  const winners = useMemo(
-    () => getRankedTeams(tournament).filter((team) => team.rank === 1),
+  const podium = useMemo(
+    () => getRankedTeams(tournament).filter((team) => team.rank <= 3),
     [tournament]
   );
 
@@ -49,31 +48,15 @@ export default function MatchesDesktopLayout({
     [sortedMatches]
   );
 
-  const spotlightIds = useMemo(
-    () => new Set(spotlightMatches.map((m) => m.id)),
-    [spotlightMatches]
-  );
-
-  const nextQueueMatchId = deferredMatches[0]?.id;
-
-  const minimizedMatches = useMemo(
-    () => sortedMatches.filter((m) => !spotlightIds.has(m.id)),
-    [sortedMatches, spotlightIds]
+  const completedMatches = useMemo(
+    () => sortedMatches.filter((match) => match.completed),
+    [sortedMatches]
   );
 
   const modalMatch = useMemo(
-    () => (modalMatchId ? tournament.matches.find((m) => m.id === modalMatchId) ?? null : null),
+    () => (modalMatchId ? tournament.matches.find((match) => match.id === modalMatchId) ?? null : null),
     [modalMatchId, tournament.matches]
   );
-
-  const scrollMiniToMatch = (matchId: number) => {
-    const el = miniCarouselRef.current?.querySelector(`[data-match-id="${matchId}"]`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-  };
-
-  useEffect(() => {
-    if (spotlightMatches[0]) scrollMiniToMatch(spotlightMatches[0].id);
-  }, [spotlightMatches[0]?.id]);
 
   const handleModalScoreUpdate = useCallback(
     (matchId: number, scoreA: number, scoreB: number, isEdit?: boolean) => {
@@ -84,72 +67,103 @@ export default function MatchesDesktopLayout({
   );
 
   useEffect(() => {
+    if (miniCarouselRef.current) miniCarouselRef.current.scrollLeft = 0;
+  }, [deferredMatches[0]?.id]);
+
+  useEffect(() => {
     if (!modalMatchId) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setModalMatchId(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setModalMatchId(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [modalMatchId]);
 
+  const totalMatches = sortedMatches.length;
   const progressLabel =
-    completedCount === 15
-      ? '15/15 complete'
+    completedCount === totalMatches
+      ? `${totalMatches}/${totalMatches} complete`
       : spotlightMatches[0]
-        ? `Match ${spotlightMatches[0].id} of 15`
-        : `${completedCount}/15 complete`;
+        ? `Match ${spotlightMatches[0].id} of ${totalMatches}`
+        : `${completedCount}/${totalMatches} complete`;
 
   return (
     <div className="matches-desktop-layout">
       <div className="matches-desktop-main">
-        <div className="matches-desktop-header">
-          <div className="flex items-center gap-2">
-            <TrophyIcon className="w-5 h-5 text-gray-900 shrink-0" />
-            <h3 className="text-lg font-bold text-gray-900">Matches</h3>
+        <div className="matches-playing-now">
+          <div className="matches-desktop-header">
+            <h3 className="text-lg font-bold text-gray-900">Playing Now</h3>
+            <span className="tab-meta">{progressLabel}</span>
           </div>
-          <span className="tab-meta">{progressLabel}</span>
-        </div>
 
-        <div className="matches-desktop-spotlight">
-          {tournamentComplete && winners.length > 0 ? (
-            <WinnerCelebrationSpotlight tournament={tournament} winners={winners} />
-          ) : (
-            <div className="matches-spotlight-grid">
-              {spotlightMatches.map((match) => (
-                <MatchCard
-                  key={match.id}
-                  match={match}
-                  tournament={tournament}
-                  onScoreUpdate={onScoreUpdate}
-                  variant="spotlight"
-                  labelMode="sequential"
-                />
-              ))}
-            </div>
-          )}
+          <div className="matches-desktop-spotlight">
+            {tournamentComplete && podium.length > 0 ? (
+              <WinnerCelebrationSpotlight tournament={tournament} podium={podium} />
+            ) : (
+              <div className="matches-spotlight-grid">
+                {spotlightMatches.map((match) => (
+                  <MatchCard
+                    key={match.id}
+                    match={match}
+                    tournament={tournament}
+                    onScoreUpdate={onScoreUpdate}
+                    variant="spotlight"
+                    labelMode="sequential"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="matches-desktop-minimized">
-          <div className="matches-minimized-header">
-            <h4 className="matches-minimized-title">All Matches</h4>
-            <span className="matches-minimized-count">
-              {tournamentComplete ? '15 complete' : `${minimizedMatches.length} remaining`}
-            </span>
-          </div>
-          <div className="matches-mini-carousel" ref={miniCarouselRef}>
-            {minimizedMatches.map((match) => (
-              <div key={match.id} data-match-id={match.id} className="match-mini-wrap">
-                <MatchCard
-                  match={match}
-                  tournament={tournament}
-                  onScoreUpdate={onScoreUpdate}
-                  variant="mini"
-                  labelMode="sequential"
-                  nextMatchId={nextQueueMatchId}
-                  onSelect={() => setModalMatchId(match.id)}
-                />
+          <div className="matches-queue-row">
+            <div className="matches-minimized-header">
+              <h4 className="matches-minimized-title">Next in Queue</h4>
+              <span className="matches-minimized-count">
+                {tournamentComplete ? 'No more matches' : `${deferredMatches.length} left`}
+              </span>
+            </div>
+            {deferredMatches.length > 0 && (
+              <div className="matches-mini-carousel" ref={miniCarouselRef}>
+                {deferredMatches.map((match) => (
+                  <div key={match.id} data-match-id={match.id} className="match-mini-wrap">
+                    <MatchCard
+                      match={match}
+                      tournament={tournament}
+                      onScoreUpdate={onScoreUpdate}
+                      variant="mini"
+                      roster
+                      labelMode="sequential"
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+          </div>
+
+          <div className="matches-completed-row">
+            <div className="matches-minimized-header">
+              <h4 className="matches-minimized-title">Completed Matches</h4>
+              <span className="matches-minimized-count">{completedMatches.length}</span>
+            </div>
+            {completedMatches.length > 0 && (
+              <div className="matches-completed-grid">
+                {completedMatches.map((match) => (
+                  <div key={match.id} data-match-id={match.id} className="match-mini-wrap">
+                    <MatchCard
+                      match={match}
+                      tournament={tournament}
+                      onScoreUpdate={onScoreUpdate}
+                      variant="mini"
+                      roster
+                      labelMode="sequential"
+                      onSelect={() => setModalMatchId(match.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -179,7 +193,7 @@ export default function MatchesDesktopLayout({
             role="dialog"
             aria-modal="true"
             aria-labelledby="match-edit-modal-title"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="match-edit-modal-header">
               <h3 id="match-edit-modal-title" className="match-edit-modal-title">
@@ -201,6 +215,7 @@ export default function MatchesDesktopLayout({
                 onScoreUpdate={handleModalScoreUpdate}
                 variant="default"
                 labelMode="sequential"
+                initialEditing
               />
             </div>
           </div>

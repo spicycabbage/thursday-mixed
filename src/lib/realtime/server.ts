@@ -1,20 +1,3 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-
-let adminClient: SupabaseClient | null = null;
-
-function getAdminClient(): SupabaseClient | null {
-  if (adminClient) return adminClient;
-
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-
-  adminClient = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  return adminClient;
-}
-
 export type ScoreToastPayload = {
   matchId: number;
   round: number;
@@ -23,45 +6,44 @@ export type ScoreToastPayload = {
   ts: number;
 };
 
+type BroadcastMessage = { topic: string; event: string; payload: unknown };
+
+function broadcastConfig(): { endpoint: string; key: string } | null {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return { endpoint: `${url.replace(/\/$/, '')}/realtime/v1/api/broadcast`, key };
+}
+
 export async function broadcastTournamentUpdate(
   tournamentId: string,
   tournament: unknown,
   update?: Omit<ScoreToastPayload, 'ts'>
 ): Promise<void> {
-  const supabase = getAdminClient();
-  if (!supabase) return;
+  const config = broadcastConfig();
+  if (!config) return;
 
-  const channel = supabase.channel(`tournament:${tournamentId}`);
+  const topic = `tournament:${tournamentId}`;
+  const messages: BroadcastMessage[] = [{ topic, event: 'tournament:sync', payload: tournament }];
+  if (update) {
+    messages.push({ topic, event: 'toast:score', payload: { ...update, ts: Date.now() } });
+  }
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('broadcast timeout')), 5000);
-
-      channel.subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          clearTimeout(timeout);
-          await channel.send({
-            type: 'broadcast',
-            event: 'tournament:sync',
-            payload: tournament,
-          });
-          if (update) {
-            await channel.send({
-              type: 'broadcast',
-              event: 'toast:score',
-              payload: { ...update, ts: Date.now() },
-            });
-          }
-          resolve();
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          clearTimeout(timeout);
-          reject(new Error(`channel ${status}`));
-        }
-      });
+    const res = await fetch(config.endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ messages }),
+      signal: AbortSignal.timeout(3000),
     });
+    if (!res.ok) {
+      console.error('Realtime broadcast failed:', res.status, await res.text().catch(() => ''));
+    }
   } catch (error) {
     console.error('Realtime broadcast failed:', error);
-  } finally {
-    await supabase.removeChannel(channel);
   }
 }

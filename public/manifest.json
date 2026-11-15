@@ -1,7 +1,8 @@
 {
-  "name": "Thursday Mixed",
-  "short_name": "Thursday Mixed",
-  "description": "6-team round robin badminton tournament scoring",
+  "name": "Saturday Mixed",
+  "short_name": "Saturday Mixed",
+  "id": "/",
+  "description": "Doubles badminton tournament scoring",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -36,7 +37,7 @@
       "purpose": "any"
     },
     {
-      "src": "/icon-512x512.png",
+      "src": "/icon-maskable-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

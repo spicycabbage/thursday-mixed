@@ -17,8 +17,7 @@ export default function TeamStandingsPanel({
   onTeamSelect,
 }: TeamStandingsPanelProps) {
   const rankedTeams = getRankedTeams(tournament);
-  const showFinalize =
-    onFinalize && isTournamentComplete(tournament) && !tournament.isFinalized;
+  const showFinalize = !!onFinalize && isTournamentComplete(tournament) && !tournament.isFinalized;
 
   const getPlayerName = (playerId: number) =>
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
@@ -39,10 +38,7 @@ export default function TeamStandingsPanel({
               {!compact ? (
                 <div className="team-standings-players min-w-0">
                   <div className="team-standings-player truncate">
-                    {getPlayerName(team.player1Id)}
-                  </div>
-                  <div className="team-standings-player truncate">
-                    {getPlayerName(team.player2Id)}
+                    {getPlayerName(team.player1Id)} & {getPlayerName(team.player2Id)}
                   </div>
                 </div>
               ) : (
@@ -89,11 +85,9 @@ export default function TeamStandingsPanel({
         <p className="team-standings-finalized-label">Tournament finalized</p>
       )}
 
-      {onFinalize && (
-        <Link href="/" className="team-standings-home-link">
-          Return to Home
-        </Link>
-      )}
+      <Link href="/" className="team-standings-home-link">
+        Return to Home
+      </Link>
     </div>
   );
 }

@@ -1,12 +1,12 @@
 'use client';
 
-import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
+import { RealtimeClient, type RealtimeChannel } from '@supabase/realtime-js';
 import type { Tournament } from '@/lib/gameLogic';
 import type { ScoreToastPayload } from './server';
 
-let browserClient: SupabaseClient | null = null;
+let browserClient: RealtimeClient | null = null;
 
-function getBrowserClient(): SupabaseClient | null {
+function getBrowserClient(): RealtimeClient | null {
   if (browserClient) return browserClient;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,14 +15,10 @@ function getBrowserClient(): SupabaseClient | null {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return null;
 
-  browserClient = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
+  browserClient = new RealtimeClient(`${url.replace(/\/$/, '')}/realtime/v1`, {
+    params: { apikey: key },
   });
   return browserClient;
-}
-
-export function isRealtimeConfigured(): boolean {
-  return getBrowserClient() !== null;
 }
 
 export function subscribeToTournament(
@@ -32,10 +28,10 @@ export function subscribeToTournament(
     onToast?: (payload: ScoreToastPayload) => void;
   }
 ): () => void {
-  const supabase = getBrowserClient();
-  if (!supabase) return () => {};
+  const client = getBrowserClient();
+  if (!client) return () => {};
 
-  const channel: RealtimeChannel = supabase
+  const channel: RealtimeChannel = client
     .channel(`tournament:${tournamentId}`, {
       config: { broadcast: { self: false } },
     })
@@ -52,6 +48,6 @@ export function subscribeToTournament(
     .subscribe();
 
   return () => {
-    supabase.removeChannel(channel);
+    client.removeChannel(channel);
   };
 }

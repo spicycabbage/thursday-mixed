@@ -1,31 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureSchema, sql } from '@/lib/db';
-import { createTournament, NUM_TEAMS } from '@/lib/gameLogic';
+import { ADMIN_COOKIE, adminSecret, hasAdminCookie } from '@/lib/adminAuth';
+import { ensureSchema, ensureTournamentMeta, sql } from '@/lib/db';
+import { createTournament, duplicateNameKeys, isEventType, isTeamCount, nameKey, normalizeName } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: NextRequest) {
   try {
+    const secret = adminSecret();
+    if (!secret || !hasAdminCookie(req.cookies.get(ADMIN_COOKIE)?.value, secret)) {
+      return NextResponse.json({ error: 'Admin only' }, { status: 401 });
+    }
+
     await ensureSchema();
-    const { teams, date } = await req.json();
-    if (!Array.isArray(teams) || teams.length !== NUM_TEAMS) {
-      return NextResponse.json({ error: 'Invalid input: need 6 teams with 2 players each' }, { status: 400 });
+    await ensureTournamentMeta();
+    const { teams, date, name, eventType } = await req.json();
+    if (!Array.isArray(teams) || !isTeamCount(teams.length)) {
+      return NextResponse.json({ error: 'Invalid input: need 6, 7, or 8 teams with 2 players each' }, { status: 400 });
+    }
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 40) {
+      return NextResponse.json({ error: 'Tournament name is required' }, { status: 400 });
+    }
+    if (typeof eventType !== 'string' || !isEventType(eventType)) {
+      return NextResponse.json({ error: 'Event type must be MD, WD, or XD' }, { status: 400 });
     }
 
-    for (const team of teams) {
-      if (!team?.player1?.trim() || !team?.player2?.trim()) {
-        return NextResponse.json({ error: 'Each team needs 2 player names' }, { status: 400 });
-      }
+    const typedNames = teams.flatMap((team: { player1?: string; player2?: string }) => [
+      normalizeName(team?.player1 ?? ''),
+      normalizeName(team?.player2 ?? ''),
+    ]);
+    if (typedNames.some((playerName) => !playerName)) {
+      return NextResponse.json({ error: 'Each team needs 2 player names' }, { status: 400 });
+    }
+    if (duplicateNameKeys(typedNames).length > 0) {
+      return NextResponse.json({ error: 'Player names must be unique' }, { status: 400 });
     }
 
-    const active = await sql<{ c: number }[]>`select count(*)::int as c from tournaments where is_finalized=false`;
-    if ((active[0]?.c || 0) > 0) {
-      return NextResponse.json({ error: 'active_tournament_exists' }, { status: 409 });
-    }
+    const keys = typedNames.map((playerName) => nameKey(playerName));
+    const known = await sql<{ name_key: string; name: string }[]>`
+      SELECT name_key, name
+      FROM (
+        SELECT
+          lower(trim(name)) AS name_key,
+          (array_agg(trim(name) ORDER BY length(trim(name)) DESC))[1] AS name
+        FROM players
+        WHERE lower(trim(name)) IN ${sql(keys)}
+        GROUP BY lower(trim(name))
+      ) known_names
+    `;
+    const knownByKey = new Map(known.map((row) => [row.name_key, row.name]));
+    const canonicalTeams = teams.map((team: { player1?: string; player2?: string }) => ({
+      player1: knownByKey.get(nameKey(team.player1 ?? '')) ?? normalizeName(team.player1 ?? ''),
+      player2: knownByKey.get(nameKey(team.player2 ?? '')) ?? normalizeName(team.player2 ?? ''),
+    }));
 
-    const t = createTournament(teams, date);
+    const t = createTournament(canonicalTeams, date, { name: name.trim(), eventType });
 
-    await sql`insert into tournaments (id, access_code, date, current_round, is_finalized)
-      values (${t.id}, ${''}, ${t.date}, ${t.currentRound}, ${t.isFinalized})`;
+    await sql`insert into tournaments (id, access_code, name, event_type, date, current_round, is_finalized)
+      values (${t.id}, ${''}, ${t.name}, ${t.eventType}, ${t.date}, ${t.currentRound}, ${t.isFinalized})`;
 
     for (const p of t.players) {
       await sql`insert into players (tournament_id, id, name, team_id, total_score)

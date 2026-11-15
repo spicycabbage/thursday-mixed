@@ -20,6 +20,12 @@ export default function TeamSummaryModal({
   const getPlayerName = (playerId: number) =>
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
 
+  const opponentNames = (opponentTeamId: number) => {
+    const opponent = tournament.teams.find((entry) => entry.id === opponentTeamId);
+    if (!opponent) return 'Unknown';
+    return `${getPlayerName(opponent.player1Id)} & ${getPlayerName(opponent.player2Id)}`;
+  };
+
   useEffect(() => {
     if (!teamId) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -88,7 +94,7 @@ export default function TeamSummaryModal({
                 <div className="team-summary-match-main">
                   <span className="team-summary-match-id">#{summary.matchId}</span>
                   <span className="team-summary-match-opponent">
-                    vs Team {summary.opponentLabel}
+                    vs {opponentNames(summary.opponentTeamId)}
                   </span>
                 </div>
                 <div className="team-summary-match-result">

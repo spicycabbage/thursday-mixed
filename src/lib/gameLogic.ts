@@ -1,10 +1,13 @@
-export const TEAM_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'] as const;
+export const TEAM_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
+export const TEAM_COUNTS = [6, 7, 8] as const;
 export const NUM_TEAMS = 6;
 export const NUM_PLAYERS = 12;
 export const NUM_ROUNDS = 8;
 export const NUM_MATCHES = 15;
+export const MAX_FINISH_PLACES = 8;
 
 export type TeamLabel = (typeof TEAM_LABELS)[number];
+export type TeamCount = (typeof TEAM_COUNTS)[number];
 
 export interface Player {
   id: number;
@@ -45,8 +48,28 @@ export interface Match {
   winnerTeam?: 'A' | 'B' | null;
 }
 
+export type EventType = 'MD' | 'WD' | 'XD';
+
+export const EVENT_TYPES: EventType[] = ['MD', 'WD', 'XD'];
+
+export const EVENT_TYPE_LABELS: Record<EventType, string> = {
+  MD: "Men's Doubles",
+  WD: "Women's Doubles",
+  XD: 'Mixed Doubles',
+};
+
+export function isEventType(value: string): value is EventType {
+  return value === 'MD' || value === 'WD' || value === 'XD';
+}
+
+export function eventTypeOf(value: string | null | undefined): EventType {
+  return value && isEventType(value) ? value : 'XD';
+}
+
 export interface Tournament {
   id: string;
+  name: string;
+  eventType: EventType;
   date: string;
   teams: Team[];
   players: Player[];
@@ -61,8 +84,83 @@ export interface TeamRegistration {
   player2: string;
 }
 
+export function isTeamCount(value: number): value is TeamCount {
+  return value === 6 || value === 7 || value === 8;
+}
+
+export function matchCountForTeams(teamCount: number): number {
+  if (!isTeamCount(teamCount)) {
+    throw new Error('Tournament must have 6, 7, or 8 teams');
+  }
+  return (teamCount * (teamCount - 1)) / 2;
+}
+
+export function getTournamentRoundCount(matches: { round: number }[]): number {
+  return matches.reduce((max, match) => Math.max(max, match.round), 1);
+}
+
+type CourtMatchup = { teamA: number; teamB: number; court: number };
+
+function circlePairings(teamCount: number): [number, number][][] {
+  const ids: (number | null)[] = Array.from({ length: teamCount }, (_, index) => index + 1);
+  if (teamCount % 2 === 1) ids.push(null);
+  const count = ids.length;
+  const rotation = ids.slice();
+  const rounds: [number, number][][] = [];
+
+  for (let round = 0; round < count - 1; round++) {
+    const matches: [number, number][] = [];
+    for (let index = 0; index < count / 2; index++) {
+      const teamA = rotation[index];
+      const teamB = rotation[count - 1 - index];
+      if (teamA != null && teamB != null) matches.push([teamA, teamB]);
+    }
+    rounds.push(matches);
+    const fixed = rotation[0];
+    const rest = rotation.slice(1);
+    const moved = rest.pop();
+    if (moved !== undefined) rest.unshift(moved);
+    rotation.splice(0, rotation.length, fixed, ...rest);
+  }
+
+  return rounds;
+}
+
+function packOntoTwoCourts(pairings: [number, number][][]): CourtMatchup[][] {
+  let queue = pairings.flat();
+  const rounds: CourtMatchup[][] = [];
+
+  while (queue.length > 0) {
+    const round: [number, number][] = [];
+    const used = new Set<number>();
+    const deferred: [number, number][] = [];
+
+    for (const pairing of queue) {
+      const [teamA, teamB] = pairing;
+      if (round.length < 2 && !used.has(teamA) && !used.has(teamB)) {
+        round.push(pairing);
+        used.add(teamA);
+        used.add(teamB);
+      } else {
+        deferred.push(pairing);
+      }
+    }
+
+    rounds.push(
+      round.map(([teamA, teamB], courtIndex) => ({
+        teamA,
+        teamB,
+        court: courtIndex + 1,
+      }))
+    );
+    queue = deferred;
+  }
+
+  return rounds;
+}
+
 // 6-team round robin: 15 matches across 8 rounds (2 courts)
-export const ROUND_MATCHUPS: { teamA: number; teamB: number; court: number }[][] = [
+export const ROUND_MATCHUPS: CourtMatchup[][] = [
   // Round 1: A-F, B-E
   [{ teamA: 1, teamB: 6, court: 1 }, { teamA: 2, teamB: 5, court: 2 }],
   // Round 2: C-D, A-E
@@ -81,6 +179,23 @@ export const ROUND_MATCHUPS: { teamA: number; teamB: number; court: number }[][]
   [{ teamA: 3, teamB: 5, court: 1 }],
 ];
 
+export function buildRoundMatchups(teamCount: number): CourtMatchup[][] {
+  if (!isTeamCount(teamCount)) {
+    throw new Error('Tournament must have 6, 7, or 8 teams');
+  }
+  switch (teamCount) {
+    case 6:
+      return ROUND_MATCHUPS;
+    case 7:
+    case 8:
+      return packOntoTwoCourts(circlePairings(teamCount));
+    default: {
+      const unexpected: never = teamCount;
+      return unexpected;
+    }
+  }
+}
+
 export const DEFAULT_PLAYER_NAMES = [
   'Jason', 'JasonNg', 'Mike', 'Kim', 'Alex', 'Ray', 'Steven', 'Josh',
   'Justin', 'Stevie', 'Eddie', 'Yorkie', 'Tonny', 'Wilson', 'Victor',
@@ -97,6 +212,23 @@ export function nameKey(name: string): string {
 
 export function namesMatch(a: string, b: string): boolean {
   return nameKey(a) === nameKey(b);
+}
+
+export function duplicateNameKeys(names: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const name of names) {
+    const key = nameKey(name);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts].filter(([, count]) => count > 1).map(([key]) => key);
+}
+
+export function canonicalName(typed: string, knownNames: string[]): string {
+  const trimmed = normalizeName(typed);
+  const key = nameKey(trimmed);
+  if (!key) return trimmed;
+  return knownNames.find((name) => nameKey(name) === key) ?? trimmed;
 }
 
 export function pickDisplayName(current: string, next: string): string {
@@ -146,7 +278,8 @@ export function validateScore(scoreA: number, scoreB: number): boolean {
 
 export function createTournament(
   teamRegistrations: TeamRegistration[],
-  date?: string
+  date?: string,
+  options?: { name?: string; eventType?: EventType }
 ): Tournament {
   const teams: Team[] = teamRegistrations.map((reg, index) => {
     const teamId = index + 1;
@@ -191,10 +324,15 @@ export function createTournament(
     ];
   });
 
+  const teamCount = teamRegistrations.length;
+  if (!isTeamCount(teamCount)) {
+    throw new Error('Tournament must have 6, 7, or 8 teams');
+  }
+
   const matches: Match[] = [];
   let matchId = 1;
 
-  ROUND_MATCHUPS.forEach((roundMatches, roundIndex) => {
+  buildRoundMatchups(teamCount).forEach((roundMatches, roundIndex) => {
     roundMatches.forEach((matchup) => {
       const [aP1, aP2] = getPlayerIdsForTeam(matchup.teamA);
       const [bP1, bP2] = getPlayerIdsForTeam(matchup.teamB);
@@ -216,6 +354,8 @@ export function createTournament(
 
   return {
     id: generateTournamentId(),
+    name: options?.name?.trim() ?? '',
+    eventType: options?.eventType ?? 'XD',
     date:
       date ||
       (() => {
@@ -283,7 +423,7 @@ function applyMatchStats(
   updatePlayers([match.teamB.player1, match.teamB.player2], scoreB, scoreA, winner === 'B');
 }
 
-function recomputeAllStats(tournament: Tournament, pendingMatch?: { id: number; scoreA: number; scoreB: number }): void {
+export function recomputeAllStats(tournament: Tournament, pendingMatch?: { id: number; scoreA: number; scoreB: number }): void {
   tournament.teams.forEach((t) => {
     t.wins = 0;
     t.losses = 0;
@@ -336,7 +476,8 @@ export function updateMatchScore(
   if (!isEdit) {
     const roundMatches = updatedTournament.matches.filter((m) => m.round === match.round);
     const roundCompleted = roundMatches.every((m) => m.completed);
-    if (roundCompleted && match.round < NUM_ROUNDS) {
+    const lastRound = getTournamentRoundCount(updatedTournament.matches);
+    if (roundCompleted && match.round < lastRound) {
       updatedTournament.currentRound = match.round + 1;
     }
   }

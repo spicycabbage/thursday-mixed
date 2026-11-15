@@ -1,19 +1,25 @@
 import { NextResponse } from 'next/server';
-import { ensureSchema, sql } from '@/lib/db';
+import { sql } from '@/lib/db';
+import { eventTypeOf } from '@/lib/gameLogic';
 
 export async function GET() {
   try {
-    await ensureSchema();
-    const rows = await sql<{ id: string }[]>`
-      select id from tournaments
-      where is_finalized=false
-      order by created_at desc
-      limit 1`;
-    const t = rows[0] || null;
-    return NextResponse.json({ active: !!t, tournament: t });
-  } catch (e: any) {
-    return NextResponse.json({ active: false, error: e.message || 'Server error' }, { status: 500 });
+    const rows = await sql<{ id: string; name: string; event_type: string }[]>`
+      select id, name, event_type from tournaments
+      where is_finalized = false
+      order by created_at desc`;
+    const tournaments = rows.map((row) => ({
+      id: row.id,
+      name: row.name ?? '',
+      eventType: eventTypeOf(row.event_type),
+    }));
+    return NextResponse.json({
+      active: tournaments.length > 0,
+      tournament: tournaments[0] ?? null,
+      tournaments,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Server error';
+    return NextResponse.json({ active: false, tournament: null, tournaments: [], error: message }, { status: 500 });
   }
 }
-
-

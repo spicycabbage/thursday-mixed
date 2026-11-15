@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureSchema, sql } from '@/lib/db';
+import { sql } from '@/lib/db';
 import { analyticsCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
 import { nameKey, normalizeName } from '@/lib/gameLogic';
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureSchema();
-    
     const { searchParams } = new URL(request.url);
     const player1Name = searchParams.get('player1') ? normalizeName(searchParams.get('player1')!) : null;
     const player2Name = searchParams.get('player2') ? normalizeName(searchParams.get('player2')!) : null;

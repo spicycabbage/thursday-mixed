@@ -1,88 +1,57 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { UserGroupIcon } from '@heroicons/react/24/outline';
-import { AppLinkButton, PageCard, PageContent, PageHeader, PageShell, PageTitleBlock } from '@/components/PageShell';
+import { PageCard, PageContent, PageHeader, PageShell, PageTitleBlock } from '@/components/PageShell';
+import { sql } from '@/lib/db';
+import { eventTypeOf } from '@/lib/gameLogic';
 
-export default function JoinTournamentPage() {
-  const router = useRouter();
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+export const dynamic = 'force-dynamic';
 
-  const joinActiveTournament = async () => {
-    setLoading(true);
-    setError('');
+export default async function JoinTournamentPage() {
+  let open: { id: string; name: string; eventType: string }[] = [];
+  try {
+    const rows = await sql<{ id: string; name: string; event_type: string }[]>`
+      select id, name, event_type from tournaments
+      where is_finalized = false
+      order by created_at desc`;
+    open = rows.map((row) => ({
+      id: row.id,
+      name: row.name ?? '',
+      eventType: eventTypeOf(row.event_type),
+    }));
+  } catch {
+    open = [];
+  }
 
-    try {
-      const res = await fetch(`/api/tournaments/active?t=${Date.now()}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to check active tournament');
-      const data = await res.json();
-
-      if (!data?.active || !data?.tournament?.id) {
-        setError("There is no active tournament. Why don't you create one?");
-        setLoading(false);
-        return;
-      }
-
-      const tournamentId = data.tournament.id;
-      const tournamentRes = await fetch(
-        `/api/tournaments/${encodeURIComponent(tournamentId)}?t=${Date.now()}`,
-        { cache: 'no-store' }
-      );
-
-      if (tournamentRes.ok) {
-        const t = await tournamentRes.json();
-        try {
-          localStorage.setItem('currentTournament', JSON.stringify(t));
-        } catch {}
-        router.push(`/tournament/${tournamentId}`);
-        return;
-      }
-
-      setError('Unable to load the active tournament.');
-      setLoading(false);
-    } catch {
-      setError('Unable to join right now. Please try again.');
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    joinActiveTournament();
-  }, []);
+  if (open.length === 1) redirect(`/tournament/${open[0].id}`);
 
   return (
     <PageShell>
       <PageCard>
-        <PageHeader
-          title="Join Tournament"
-          icon={<UserGroupIcon className="w-5 h-5" />}
-        />
-
+        <PageHeader title="Join Tournament" icon={<UserGroupIcon className="w-5 h-5" />} />
         <PageContent>
-          <PageTitleBlock
-            title="Joining Tournament"
-            subtitle={loading ? 'Loading the active tournament...' : 'Connect to the current tournament'}
-          />
-
-          {error && (
-            <div className="app-alert-error mb-6">
-              <p className="font-semibold">Unable to join tournament</p>
-              <p>{error}</p>
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="space-y-3">
-              <button type="button" onClick={joinActiveTournament} className="app-btn-action">
-                Try Again
-              </button>
-            <AppLinkButton href="/create-tournament" variant="primary">
-              Create New Tournament
-            </AppLinkButton>
-            </div>
+          {open.length === 0 ? (
+            <>
+              <PageTitleBlock title="No open tournament" subtitle="Nothing is in progress right now." />
+              <Link href="/" className="app-btn-action block text-center no-underline">
+                Back to lobby
+              </Link>
+            </>
+          ) : (
+            <>
+              <PageTitleBlock title="Choose a tournament" subtitle="More than one event is in progress." />
+              <div className="space-y-3">
+                {open.map((tournament) => (
+                  <Link
+                    key={tournament.id}
+                    href={`/tournament/${tournament.id}`}
+                    className="app-btn-success block text-center no-underline"
+                  >
+                    {tournament.eventType} · {tournament.name.trim() || 'Open tournament'}
+                  </Link>
+                ))}
+              </div>
+            </>
           )}
         </PageContent>
       </PageCard>

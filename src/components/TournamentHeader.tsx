@@ -4,6 +4,8 @@ import { PencilIcon } from '@heroicons/react/24/outline';
 
 interface TournamentHeaderProps {
   date: string;
+  name?: string;
+  eventType?: string;
   activeTab: 'players' | 'matches' | 'rank';
   onTabChange: (tab: 'players' | 'matches' | 'rank') => void;
   onEditPlayers?: () => void;
@@ -13,6 +15,8 @@ interface TournamentHeaderProps {
 
 export default function TournamentHeader({
   date,
+  name,
+  eventType,
   activeTab,
   onTabChange,
   onEditPlayers,
@@ -41,8 +45,14 @@ export default function TournamentHeader({
   return (
     <div className="shrink-0 border-b border-gray-300">
       <div className="tournament-header-bar px-4 py-2.5 border-b border-gray-300 bg-white">
-        <div className="text-base text-gray-900 font-bold tournament-header-date">
-          {formatDate(date)}
+        <div className="min-w-0">
+          <div className="text-xs font-extrabold tracking-wide text-blue-800">
+            {eventType || 'XD'}
+            {name?.trim() ? ` · ${name.trim()}` : ''}
+          </div>
+          <div className="text-2xl text-gray-900 font-bold tournament-header-date">
+            {formatDate(date)}
+          </div>
         </div>
         {onEditPlayers && (
           <button

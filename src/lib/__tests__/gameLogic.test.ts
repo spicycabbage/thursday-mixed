@@ -9,6 +9,8 @@ import {
   NUM_TEAMS,
   NUM_MATCHES,
   NUM_ROUNDS,
+  buildRoundMatchups,
+  matchCountForTeams,
   getWinnerTeam,
   getDesktopSpotlightMatches,
   matchesShareParticipants,
@@ -151,6 +153,73 @@ describe('Game Logic', () => {
     });
   });
 
+  describe('buildRoundMatchups', () => {
+    function assertRoundRobin(teamCount = 6) {
+      const rounds = buildRoundMatchups(teamCount);
+      const pairings = new Set();
+      const games = new Map();
+
+      rounds.forEach((round) => {
+        expect(round.length).toBeGreaterThan(0);
+        expect(round.length).toBeLessThanOrEqual(2);
+        const playing = new Set();
+        round.forEach((match) => {
+          expect(playing.has(match.teamA)).toBe(false);
+          expect(playing.has(match.teamB)).toBe(false);
+          playing.add(match.teamA);
+          playing.add(match.teamB);
+          const key = [match.teamA, match.teamB].sort().join('-');
+          expect(pairings.has(key)).toBe(false);
+          pairings.add(key);
+          games.set(match.teamA, (games.get(match.teamA) ?? 0) + 1);
+          games.set(match.teamB, (games.get(match.teamB) ?? 0) + 1);
+        });
+      });
+
+      expect(pairings.size).toBe(matchCountForTeams(teamCount));
+      for (let teamId = 1; teamId <= teamCount; teamId++) {
+        expect(games.get(teamId)).toBe(teamCount - 1);
+      }
+    }
+
+    it('keeps the 6-team schedule at 15 games and 8 rounds', () => {
+      expect(buildRoundMatchups(6)).toEqual(ROUND_MATCHUPS);
+      assertRoundRobin(6);
+    });
+
+    it('builds a 21-game schedule for 7 teams', () => {
+      assertRoundRobin(7);
+      expect(buildRoundMatchups(7).length).toBeLessThanOrEqual(14);
+    });
+
+    it('builds a 28-game schedule for 8 teams on 14 full rounds', () => {
+      const rounds = buildRoundMatchups(8);
+      expect(rounds).toHaveLength(14);
+      expect(rounds.every((round) => round.length === 2)).toBe(true);
+      assertRoundRobin(8);
+    });
+
+    it('creates 7- and 8-team tournaments from the registration list', () => {
+      const seven = createTournament([
+        ...sampleTeams,
+        { player1: 'Gina', player2: 'Grace' },
+      ]);
+      expect(seven.teams).toHaveLength(7);
+      expect(seven.players).toHaveLength(14);
+      expect(seven.matches).toHaveLength(21);
+      expect(seven.teams[6].label).toBe('G');
+
+      const eight = createTournament([
+        ...sampleTeams,
+        { player1: 'Gina', player2: 'Grace' },
+        { player1: 'Hank', player2: 'Holly' },
+      ]);
+      expect(eight.teams).toHaveLength(8);
+      expect(eight.matches).toHaveLength(28);
+      expect(eight.teams[7].label).toBe('H');
+    });
+  });
+
   describe('isTournamentComplete', () => {
     it('should return false when matches incomplete', () => {
       const tournament = createTournament(sampleTeams);
@@ -161,42 +230,35 @@ describe('Game Logic', () => {
   describe('getDesktopSpotlightMatches', () => {
     it('should not place matches with shared players in spotlight together', () => {
       const tournament = createTournament(sampleTeams);
-      const match4 = tournament.matches[3];
-      const match5 = tournament.matches[4];
-
-      expect(matchesShareParticipants(match4, match5)).toBe(true);
-
       const { spotlight, deferred } = getDesktopSpotlightMatches(tournament.matches);
 
       expect(spotlight).toHaveLength(2);
-      expect(spotlight.every((m) => !matchesShareParticipants(m, spotlight[0]))).toBe(true);
-      expect(deferred.map((m) => m.id)).toContain(5);
+      expect(matchesShareParticipants(spotlight[0], spotlight[1])).toBe(false);
+      expect(deferred.map((m) => m.id)).toContain(4);
     });
 
     it('should surface deferred matches after a conflicting spotlight match completes', () => {
       const tournament = createTournament(sampleTeams);
 
-      for (let id = 1; id <= 3; id++) {
-        tournament.matches = updateMatchScore(tournament, id, 21, 10).matches;
-      }
+      tournament.matches = updateMatchScore(tournament, 1, 21, 10).matches;
 
       const before = getDesktopSpotlightMatches(tournament.matches);
-      expect(before.deferred.map((m) => m.id)).toContain(5);
+      expect(before.deferred.map((m) => m.id)).toContain(4);
 
-      tournament.matches = updateMatchScore(tournament, 4, 21, 10).matches;
+      tournament.matches = updateMatchScore(tournament, 2, 21, 10).matches;
 
       const after = getDesktopSpotlightMatches(tournament.matches);
-      expect(after.spotlight.map((m) => m.id)).toContain(5);
+      expect(after.spotlight.map((m) => m.id)).toContain(4);
     });
 
     it('should fill spotlight with conflicting matches when no clean second match exists', () => {
       const tournament = createTournament(sampleTeams);
-      const blockedQueue = tournament.matches.filter((m) => m.id >= 4 && m.id <= 7);
+      const blockedQueue = tournament.matches.filter((m) => [1, 4, 6, 9].includes(m.id));
       const { spotlight } = getDesktopSpotlightMatches(blockedQueue);
 
       expect(spotlight).toHaveLength(2);
-      expect(spotlight[0].id).toBe(4);
-      expect(spotlight[1].id).toBe(5);
+      expect(spotlight[0].id).toBe(1);
+      expect(spotlight[1].id).toBe(4);
       expect(matchesShareParticipants(spotlight[0], spotlight[1])).toBe(true);
     });
   });

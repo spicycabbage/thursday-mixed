@@ -14,6 +14,9 @@ interface MatchCardProps {
   labelMode?: MatchCardLabelMode;
   onSelect?: () => void;
   nextMatchId?: number;
+  roster?: boolean;
+  initialEditing?: boolean;
+  readOnly?: boolean;
 }
 
 export default function MatchCard({
@@ -24,11 +27,16 @@ export default function MatchCard({
   labelMode = 'round',
   onSelect,
   nextMatchId,
+  roster = false,
+  initialEditing = false,
+  readOnly = false,
 }: MatchCardProps) {
   const [scoreA, setScoreA] = useState(match.scoreA?.toString() || '');
   const [scoreB, setScoreB] = useState(match.scoreB?.toString() || '');
   const [showValidation, setShowValidation] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(
+    initialEditing && match.completed && !tournament.isFinalized
+  );
   const isLocked = tournament.isFinalized;
 
   useEffect(() => {
@@ -65,6 +73,61 @@ export default function MatchCard({
   const teamBLabel = getTeamLabel(match.teamBId);
   const isCompleted = match.completed;
 
+  if (variant === 'mini' && roster) {
+    const statusClass = isCompleted ? 'match-mini-completed' : 'match-mini-future';
+
+    const matchLabel =
+      labelMode === 'sequential' ? `Match ${match.id}` : `Round ${match.round}`;
+
+    const side = (
+      label: string,
+      labelClass: string,
+      player1: number,
+      player2: number,
+      score: number | null
+    ) => (
+      <div className="match-mini-side">
+        <span className={`match-mini-badge ${labelClass}`}>{label}</span>
+        <span className="match-mini-names">
+          {getPlayerName(player1)} & {getPlayerName(player2)}
+        </span>
+        {score != null && <span className="match-mini-score">{score}</span>}
+      </div>
+    );
+
+    const body = (
+      <>
+        <div className="match-mini-top">
+          <span className="match-mini-round">{matchLabel}</span>
+        </div>
+        {side(
+          teamALabel,
+          'match-mini-team-a',
+          match.teamA.player1,
+          match.teamA.player2,
+          isCompleted ? match.scoreA : null
+        )}
+        {side(
+          teamBLabel,
+          'match-mini-team-b',
+          match.teamB.player1,
+          match.teamB.player2,
+          isCompleted ? match.scoreB : null
+        )}
+      </>
+    );
+
+    if (!onSelect) {
+      return <div className={`match-mini-card ${statusClass}`}>{body}</div>;
+    }
+
+    return (
+      <button type="button" onClick={onSelect} className={`match-mini-card ${statusClass}`}>
+        {body}
+      </button>
+    );
+  }
+
   if (variant === 'mini') {
     const scoreText =
       isCompleted && match.scoreA != null && match.scoreB != null
@@ -76,16 +139,9 @@ export default function MatchCard({
       : isUpNext
         ? 'match-mini-active'
         : 'match-mini-future';
-
-    const matchLabel =
-      labelMode === 'sequential' ? `#${match.id}` : `R${match.round}`;
-
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className={`match-mini-card ${statusClass}`}
-      >
+    const matchLabel = labelMode === 'sequential' ? `#${match.id}` : `R${match.round}`;
+    const body = (
+      <>
         <div className="match-mini-top">
           <span className="match-mini-round">{matchLabel}</span>
           <span className="match-mini-court">Ct {match.court}</span>
@@ -98,6 +154,16 @@ export default function MatchCard({
         <div className="match-mini-score">
           {isCompleted ? `✓ ${scoreText}` : isUpNext ? 'Up next' : 'Waiting'}
         </div>
+      </>
+    );
+
+    if (!onSelect) {
+      return <div className={`match-mini-card ${statusClass}`}>{body}</div>;
+    }
+
+    return (
+      <button type="button" onClick={onSelect} className={`match-mini-card ${statusClass}`}>
+        {body}
       </button>
     );
   }
@@ -112,7 +178,7 @@ export default function MatchCard({
     .join(' ');
 
   const renderScore = (value: string, onChange: (v: string) => void, display?: number | null) => {
-    const showInput = !isLocked && (!isCompleted || isEditing);
+    const showInput = !readOnly && !isLocked && (!isCompleted || isEditing);
     return (
       <div className={isSpotlight ? 'tab-score-slot match-score-slot-spotlight' : 'tab-score-slot'}>
         {showInput ? (
@@ -169,14 +235,22 @@ export default function MatchCard({
         </div>
       </div>
 
-      {showValidation && !isLocked && (
+      {showValidation && !readOnly && !isLocked && (
         <div className="mt-3 app-alert-error">
           <p className="font-semibold">Invalid Score!</p>
           <p>First to 21 win by 2. Past 20-20, win by 2 until someone hits 30 (30-28, 30-29 OK).</p>
         </div>
       )}
 
-      {!tournament.isFinalized && (
+      {readOnly && isCompleted && (
+        <div className="tab-match-completed mt-3">
+          <span className="flex-1 text-center">
+            ✓ {match.winnerTeam === 'A' ? teamALabel : teamBLabel} Wins
+          </span>
+        </div>
+      )}
+
+      {!readOnly && !tournament.isFinalized && (
         <div className="tab-match-footer">
           {isCompleted && !isEditing ? (
             <div className="tab-match-completed">
@@ -217,7 +291,7 @@ export default function MatchCard({
         </div>
       )}
 
-      {isEditing && !tournament.isFinalized && (
+      {!readOnly && isEditing && !tournament.isFinalized && (
         <button
           type="button"
           onClick={() => {
@@ -231,7 +305,7 @@ export default function MatchCard({
         </button>
       )}
 
-      {tournament.isFinalized && (
+      {!readOnly && tournament.isFinalized && (
         <div className="tab-match-action tab-match-action-disabled mt-3 cursor-default">
           Tournament Finalized
         </div>

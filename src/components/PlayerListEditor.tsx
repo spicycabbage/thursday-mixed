@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Tournament, TEAM_LABELS, normalizeName } from '@/lib/gameLogic';
+import { Tournament, TEAM_LABELS, duplicateNameKeys, normalizeName } from '@/lib/gameLogic';
 import { PencilIcon } from '@heroicons/react/24/outline';
 
 interface PlayerListEditorProps {
@@ -44,7 +44,12 @@ export default function PlayerListEditor({
     }
   }, [tournament, isEditing]);
 
+  const duplicateKeys = duplicateNameKeys(
+    editedTeams.flatMap((team) => [team.player1, team.player2])
+  );
+
   const handleSaveEdit = () => {
+    if (duplicateKeys.length > 0) return;
     onUpdateTeams(
       editedTeams.map((team) => ({
         player1: normalizeName(team.player1),
@@ -158,11 +163,16 @@ export default function PlayerListEditor({
           </button>
         ) : (
           <div className={isDesktop ? 'player-list-editor-edit-actions' : 'space-y-3'}>
+            {duplicateKeys.length > 0 && (
+              <p className="app-alert-error">Each player needs a unique name.</p>
+            )}
             <button
               type="button"
               onClick={handleSaveEdit}
-              disabled={!isValidTeams()}
-              className={isValidTeams() ? 'tab-btn-success' : 'tab-btn-disabled'}
+              disabled={!isValidTeams() || duplicateKeys.length > 0}
+              className={
+                isValidTeams() && duplicateKeys.length === 0 ? 'tab-btn-success' : 'tab-btn-disabled'
+              }
             >
               Save Changes
             </button>
