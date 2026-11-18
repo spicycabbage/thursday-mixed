@@ -10,10 +10,11 @@ import MatchesDesktopLayout from '@/components/matches/MatchesDesktopLayout';
 interface MatchesTabProps {
   tournament: Tournament;
   onScoreUpdate: (matchId: number, scoreA: number, scoreB: number, isEdit?: boolean) => void;
+  onRequeue?: (matchId: number) => void;
   onFinalize?: () => void;
 }
 
-export default function MatchesTab({ tournament, onScoreUpdate, onFinalize }: MatchesTabProps) {
+export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFinalize }: MatchesTabProps) {
   const [selectedRound, setSelectedRound] = useState(tournament.currentRound);
   const [autoFollow, setAutoFollow] = useState(true);
 
@@ -98,6 +99,7 @@ export default function MatchesTab({ tournament, onScoreUpdate, onFinalize }: Ma
       <MatchesDesktopLayout
         tournament={tournament}
         onScoreUpdate={onScoreUpdate}
+        onRequeue={onRequeue}
         onFinalize={onFinalize}
       />
     </div>

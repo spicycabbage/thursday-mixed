@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ADMIN_COOKIE, adminSecret, hasAdminCookie } from '@/lib/adminAuth';
 import { ensureSchema, ensureTournamentMeta, sql } from '@/lib/db';
-import { createTournament, duplicateNameKeys, isEventType, isTeamCount, nameKey, normalizeName } from '@/lib/gameLogic';
+import { createTournament, duplicateNameKeys, EVENT_TYPE_LABELS, isEventType, isTeamCount, nameKey, normalizeName } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: NextRequest) {
@@ -17,8 +17,9 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(teams) || !isTeamCount(teams.length)) {
       return NextResponse.json({ error: 'Invalid input: need 6, 7, or 8 teams with 2 players each' }, { status: 400 });
     }
-    if (typeof name !== 'string' || !name.trim() || name.trim().length > 40) {
-      return NextResponse.json({ error: 'Tournament name is required' }, { status: 400 });
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    if (trimmedName.length > 40) {
+      return NextResponse.json({ error: 'Tournament name is too long' }, { status: 400 });
     }
     if (typeof eventType !== 'string' || !isEventType(eventType)) {
       return NextResponse.json({ error: 'Event type must be MD, WD, or XD' }, { status: 400 });
@@ -53,7 +54,10 @@ export async function POST(req: NextRequest) {
       player2: knownByKey.get(nameKey(team.player2 ?? '')) ?? normalizeName(team.player2 ?? ''),
     }));
 
-    const t = createTournament(canonicalTeams, date, { name: name.trim(), eventType });
+    const t = createTournament(canonicalTeams, date, {
+      name: trimmedName || EVENT_TYPE_LABELS[eventType],
+      eventType,
+    });
 
     await sql`insert into tournaments (id, access_code, name, event_type, date, current_round, is_finalized)
       values (${t.id}, ${''}, ${t.name}, ${t.eventType}, ${t.date}, ${t.currentRound}, ${t.isFinalized})`;

@@ -46,6 +46,7 @@ export interface Match {
   scoreB: number | null;
   completed: boolean;
   winnerTeam?: 'A' | 'B' | null;
+  queueOrder?: number;
 }
 
 export type EventType = 'MD' | 'WD' | 'XD';
@@ -485,6 +486,43 @@ export function updateMatchScore(
   return updatedTournament;
 }
 
+export function matchQueueRank(match: Match): number {
+  return match.queueOrder && match.queueOrder > 0 ? match.queueOrder : match.id;
+}
+
+export function requeueMatch(tournament: Tournament, matchId: number): Tournament {
+  const existing = tournament.matches.find((match) => match.id === matchId);
+  if (!existing || !existing.completed || tournament.isFinalized) return tournament;
+
+  const updatedTournament: Tournament = {
+    ...tournament,
+    teams: tournament.teams.map((team) => ({ ...team })),
+    players: tournament.players.map((player) => ({ ...player })),
+    matches: tournament.matches.map((match) => ({ ...match })),
+  };
+
+  const match = updatedTournament.matches.find((item) => item.id === matchId);
+  if (!match) return tournament;
+
+  const nextOrder = updatedTournament.matches.reduce(
+    (max, item) => Math.max(max, matchQueueRank(item)),
+    0
+  ) + 1;
+  match.scoreA = null;
+  match.scoreB = null;
+  match.completed = false;
+  match.winnerTeam = null;
+  match.queueOrder = nextOrder;
+
+  recomputeAllStats(updatedTournament);
+  const incompleteRounds = updatedTournament.matches
+    .filter((item) => !item.completed)
+    .map((item) => item.round);
+  updatedTournament.currentRound = Math.min(...incompleteRounds);
+
+  return updatedTournament;
+}
+
 export function getRankedTeams(tournament: Tournament): Team[] {
   const sorted = [...tournament.teams].sort((a, b) => {
     if (b.wins !== a.wins) return b.wins - a.wins;
@@ -603,7 +641,7 @@ export function getDesktopSpotlightMatches(
 ): { spotlight: Match[]; deferred: Match[] } {
   const incomplete = [...matches]
     .filter((m) => !m.completed)
-    .sort((a, b) => a.id - b.id);
+    .sort((a, b) => matchQueueRank(a) - matchQueueRank(b) || a.id - b.id);
 
   const spotlight: Match[] = [];
   const deferred: Match[] = [];

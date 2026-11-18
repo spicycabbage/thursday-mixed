@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { Tournament, updateMatchScore, isTournamentComplete, getTournamentRoundCount, getTeamLabel } from '@/lib/gameLogic';
+import { Tournament, updateMatchScore, requeueMatch, isTournamentComplete, getTournamentRoundCount, getTeamLabel } from '@/lib/gameLogic';
 import { subscribeLiveTournament } from '@/lib/liveUpdates';
 import { readCachedTournament, writeCachedTournament } from '@/lib/tournamentCache';
 import { PageLoading, PageShell } from '@/components/PageShell';
@@ -14,6 +14,22 @@ import RankTab from '@/components/RankTab';
 import SpectatorView from '@/components/spectator/SpectatorView';
 
 type TabType = 'players' | 'matches' | 'rank';
+
+const TABLET_QUERY = '(min-width: 768px) and (min-height: 600px)';
+
+function subscribeTabletLayout(onChange: () => void) {
+  const media = window.matchMedia(TABLET_QUERY);
+  media.addEventListener('change', onChange);
+  return () => media.removeEventListener('change', onChange);
+}
+
+function getTabletLayoutSnapshot(): boolean | null {
+  return window.matchMedia(TABLET_QUERY).matches;
+}
+
+function getTabletLayoutServerSnapshot(): boolean | null {
+  return null;
+}
 
 export default function TournamentScreen({
   id,
@@ -29,16 +45,12 @@ export default function TournamentScreen({
   const [loading, setLoading] = useState(!initialTournament);
   const [toast, setToast] = useState<string | null>(null);
   const [showPlayersModal, setShowPlayersModal] = useState(false);
-  const [tabletLayout, setTabletLayout] = useState<boolean | null>(null);
+  const tabletLayout = useSyncExternalStore(
+    subscribeTabletLayout,
+    getTabletLayoutSnapshot,
+    getTabletLayoutServerSnapshot,
+  );
   const latestTournamentRef = useRef<Tournament | null>(null);
-
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 768px) and (min-height: 600px)');
-    const apply = () => setTabletLayout(media.matches);
-    apply();
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, []);
 
   useEffect(() => {
     latestTournamentRef.current = tournament;
@@ -185,6 +197,39 @@ export default function TournamentScreen({
     }
   };
 
+  const handleRequeue = async (matchId: number) => {
+    if (!tournament || !tabletLayout || tournament.isFinalized) return;
+
+    const previous = tournament;
+    const updatedTournament = requeueMatch(tournament, matchId);
+    if (updatedTournament === tournament) return;
+
+    localStorage.setItem('currentTournament', JSON.stringify(updatedTournament));
+    setTournament(updatedTournament);
+
+    try {
+      const response = await fetch(`/api/tournaments/${tournament.id}/requeue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        setTournament(previous);
+        localStorage.setItem('currentTournament', JSON.stringify(previous));
+        alert(error?.error || 'Could not requeue the match.');
+        return;
+      }
+      const saved = (await response.json()) as Tournament;
+      setTournament(saved);
+      localStorage.setItem('currentTournament', JSON.stringify(saved));
+    } catch {
+      setTournament(previous);
+      localStorage.setItem('currentTournament', JSON.stringify(previous));
+      alert('Could not requeue the match.');
+    }
+  };
+
   const handleTeamUpdate = async (teams: { player1: string; player2: string }[]) => {
     if (!tournament) return;
     try {
@@ -306,6 +351,7 @@ export default function TournamentScreen({
               <MatchesTab
                 tournament={tournament}
                 onScoreUpdate={handleScoreUpdate}
+                onRequeue={handleRequeue}
                 onFinalize={handleFinalizeTournament}
               />
             </div>

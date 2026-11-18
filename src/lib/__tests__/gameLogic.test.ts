@@ -14,6 +14,7 @@ import {
   getWinnerTeam,
   getDesktopSpotlightMatches,
   matchesShareParticipants,
+  requeueMatch,
 } from '../gameLogic';
 
 const sampleTeams = [
@@ -260,6 +261,23 @@ describe('Game Logic', () => {
       expect(spotlight[0].id).toBe(1);
       expect(spotlight[1].id).toBe(4);
       expect(matchesShareParticipants(spotlight[0], spotlight[1])).toBe(true);
+    });
+
+    it('puts a requeued match at the end of the queue and clears its score', () => {
+      const tournament = createTournament(sampleTeams);
+      let next = updateMatchScore(tournament, 1, 21, 10);
+      next = updateMatchScore(next, 2, 21, 8);
+
+      next = requeueMatch(next, 1);
+      const match = next.matches.find((item) => item.id === 1);
+      expect(match?.completed).toBe(false);
+      expect(match?.scoreA).toBeNull();
+      expect(match?.scoreB).toBeNull();
+
+      const after = getDesktopSpotlightMatches(next.matches);
+      expect(after.deferred.at(-1)?.id).toBe(1);
+      expect(after.spotlight.map((item) => item.id)).not.toContain(1);
+      expect(next.teams.reduce((sum, team) => sum + team.wins, 0)).toBe(1);
     });
   });
 });

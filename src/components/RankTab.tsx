@@ -26,7 +26,7 @@ function RankEntry({
   leading = false,
   onClick,
 }: {
-  badge: string;
+  badge?: string;
   title: string;
   subtitle?: string;
   record: string;
@@ -37,7 +37,7 @@ function RankEntry({
   const className = `tab-entry-row tab-entry-row-a ${leading ? 'tab-card-leading' : ''}`;
   const body = (
     <>
-      <div className="team-badge">{badge}</div>
+      {badge ? <div className="team-badge">{badge}</div> : null}
       <div className="flex-1 min-w-0">
         <div className="font-bold text-gray-900 truncate">{title}</div>
         {subtitle && <div className="tab-player-names !mt-0 !text-sm truncate">{subtitle}</div>}
@@ -78,18 +78,21 @@ export default function RankTab({
     <>
       <h4 className="tab-section-title">Team Standings</h4>
       <div className="space-y-3">
-        {rankedTeams.map((team) => (
-          <RankEntry
-            key={team.id}
-            badge={team.label}
-            title={`#${team.rank} Team ${team.label}`}
-            subtitle={`${getPlayerName(team.player1Id)} & ${getPlayerName(team.player2Id)}`}
-            record={`${team.wins}-${team.losses}`}
-            points={`${team.pointDiff > 0 ? '+' : ''}${team.pointDiff} pts`}
-            leading={team.rank === 1}
-            onClick={onTeamSelect ? () => onTeamSelect(team.id) : undefined}
-          />
-        ))}
+        {rankedTeams.map((team) => {
+          const players = `${getPlayerName(team.player1Id)} & ${getPlayerName(team.player2Id)}`;
+          return (
+            <RankEntry
+              key={team.id}
+              badge={team.label}
+              title={embedded ? `#${team.rank} ${players}` : `#${team.rank} Team ${team.label}`}
+              subtitle={embedded ? undefined : players}
+              record={`${team.wins}-${team.losses}`}
+              points={`${team.pointDiff > 0 ? '+' : ''}${team.pointDiff} pts`}
+              leading={team.rank === 1}
+              onClick={onTeamSelect ? () => onTeamSelect(team.id) : undefined}
+            />
+          );
+        })}
       </div>
 
       {!embedded && (

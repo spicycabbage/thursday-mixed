@@ -66,6 +66,7 @@ create table if not exists matches (
   foreign key (tournament_id) references tournaments(id) on delete cascade
 );
 alter table matches add column if not exists winner_team text;
+alter table matches add column if not exists queue_order int not null default 0;
 alter table matches add column if not exists court int not null default 1;
 alter table matches add column if not exists team_a_id int not null default 1;
 alter table matches add column if not exists team_b_id int not null default 2;
@@ -87,6 +88,7 @@ alter table tournaments add column if not exists name text not null default '';
 const TOURNAMENT_META_SQL = `
 alter table tournaments add column if not exists event_type text not null default 'XD';
 alter table tournaments add column if not exists name text not null default '';
+alter table matches add column if not exists queue_order int not null default 0;
 `;
 
 let metaReady: Promise<void> | null = null;

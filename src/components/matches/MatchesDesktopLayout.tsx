@@ -16,12 +16,14 @@ import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
 interface MatchesDesktopLayoutProps {
   tournament: Tournament;
   onScoreUpdate: (matchId: number, scoreA: number, scoreB: number, isEdit?: boolean) => void;
+  onRequeue?: (matchId: number) => void;
   onFinalize?: () => void;
 }
 
 export default function MatchesDesktopLayout({
   tournament,
   onScoreUpdate,
+  onRequeue,
   onFinalize,
 }: MatchesDesktopLayoutProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
@@ -60,6 +62,19 @@ export default function MatchesDesktopLayout({
   const modalMatch = useMemo(
     () => (modalMatchId ? tournament.matches.find((match) => match.id === modalMatchId) ?? null : null),
     [modalMatchId, tournament.matches]
+  );
+
+  const requestRequeue = useCallback(
+    (matchId: number) => {
+      if (!onRequeue || tournament.isFinalized) return;
+      const confirmed = window.confirm(
+        `Requeue Match ${matchId}? The score will be cleared and it will go to the end of the queue.`
+      );
+      if (!confirmed) return;
+      onRequeue(matchId);
+      setModalMatchId(null);
+    },
+    [onRequeue, tournament.isFinalized]
   );
 
   const handleModalScoreUpdate = useCallback(
@@ -163,6 +178,7 @@ export default function MatchesDesktopLayout({
                       roster
                       labelMode="sequential"
                       onSelect={() => setModalMatchId(match.id)}
+                      onRequeue={requestRequeue}
                     />
                   </div>
                 ))}
@@ -220,6 +236,7 @@ export default function MatchesDesktopLayout({
                 variant="default"
                 labelMode="sequential"
                 initialEditing
+                onRequeue={requestRequeue}
               />
             </div>
           </div>

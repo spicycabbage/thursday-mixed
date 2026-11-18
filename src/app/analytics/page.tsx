@@ -1,16 +1,43 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { ChartBarIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageLoading, PageShell, PageTitleBlock } from '@/components/PageShell';
 import { EVENT_TYPE_LABELS, type EventType } from '@/lib/gameLogic';
 
 type AnalyticsTab = EventType | 'ALL';
-const ANALYTICS_TABS: AnalyticsTab[] = ['MD', 'WD', 'XD', 'ALL'];
+type StatSortKey = 'wins' | 'losses' | 'winPercentage';
+const ANALYTICS_TABS: AnalyticsTab[] = ['ALL', 'MD', 'WD', 'XD'];
 
 function statsCacheKey(tab: AnalyticsTab) {
   return `analytics:player-stats:${tab}`;
+}
+
+function SortHeader({
+  label,
+  column,
+  sortKey,
+  sortDesc,
+  onSort,
+}: {
+  label: string;
+  column: StatSortKey;
+  sortKey: StatSortKey;
+  sortDesc: boolean;
+  onSort: (key: StatSortKey) => void;
+}) {
+  const active = sortKey === column;
+  return (
+    <button
+      type="button"
+      className={`analytics-sort${active ? ' analytics-sort-active' : ''}`}
+      onClick={() => onSort(column)}
+    >
+      {label}
+      {active ? (sortDesc ? ' ↓' : ' ↑') : ''}
+    </button>
+  );
 }
 
 interface PlayerMatch {
@@ -48,12 +75,32 @@ function formatMatchDate(dateString: string) {
 function AnalyticsContent() {
   const [playerStats, setPlayerStats] = useState<PlayerStats[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [matches, setMatches] = useState<PlayerMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [eventTab, setEventTab] = useState<AnalyticsTab>('ALL');
+  const [sortKey, setSortKey] = useState<StatSortKey>('winPercentage');
+  const [sortDesc, setSortDesc] = useState(true);
+
+  const sortedStats = useMemo(() => {
+    const list = [...playerStats];
+    list.sort((a, b) => {
+      const diff = a[sortKey] - b[sortKey];
+      if (diff !== 0) return sortDesc ? -diff : diff;
+      return a.name.localeCompare(b.name);
+    });
+    return list;
+  }, [playerStats, sortKey, sortDesc]);
+
+  const toggleSort = (key: StatSortKey) => {
+    if (sortKey === key) {
+      setSortDesc((desc) => !desc);
+      return;
+    }
+    setSortKey(key);
+    setSortDesc(true);
+  };
 
   const fetchPlayerStats = async (tab: AnalyticsTab, attempt: number): Promise<PlayerStats[] | null> => {
     const controller = new AbortController();
@@ -71,15 +118,9 @@ function AnalyticsContent() {
     }
   };
 
-  const loadPlayerStats = async (
-    tab: AnalyticsTab,
-    opts?: { refresh?: boolean; hadCache?: boolean }
-  ) => {
-    const isRefresh = opts?.refresh ?? false;
+  const loadPlayerStats = async (tab: AnalyticsTab, opts?: { hadCache?: boolean }) => {
     const hadCache = opts?.hadCache ?? false;
-
-    if (isRefresh) setRefreshing(true);
-    else setLoadError(null);
+    setLoadError(null);
 
     let stats: PlayerStats[] | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -97,14 +138,11 @@ function AnalyticsContent() {
       try {
         sessionStorage.setItem(statsCacheKey(tab), JSON.stringify(stats));
       } catch {}
-    } else if (isRefresh) {
-      setLoadError('Could not refresh analytics. Try again in a moment.');
     } else if (!hadCache) {
-      setLoadError('Analytics server is slow to wake up. Tap refresh to try again.');
+      setLoadError('Analytics server is slow to wake up. Try again in a moment.');
     }
 
     setLoading(false);
-    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -171,6 +209,10 @@ function AnalyticsContent() {
   return (
     <PageShell>
       <PageCard>
+        <PageHeader
+          title="Advanced Analytics"
+          icon={<ChartBarIcon className="w-5 h-5" />}
+        />
         <nav className="event-type-tabs event-type-tabs-4" aria-label="Event type">
           {ANALYTICS_TABS.map((tab) => (
             <button
@@ -184,29 +226,12 @@ function AnalyticsContent() {
             </button>
           ))}
         </nav>
-        <PageHeader
-          title="Advanced Analytics"
-          icon={<ChartBarIcon className="w-5 h-5" />}
-        />
 
         <PageContent>
           <PageTitleBlock
             title="Player Win-Loss Records"
             subtitle={eventTab === 'ALL' ? 'All events' : EVENT_TYPE_LABELS[eventTab]}
           />
-          <div className="flex justify-center -mt-4 mb-4">
-            <button
-              type="button"
-              onClick={() => loadPlayerStats(eventTab, { refresh: true })}
-              disabled={refreshing}
-              className="text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50"
-              title="Refresh data"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-          </div>
 
           {loadError && (
             <div className="app-alert-error mb-4">{loadError}</div>
@@ -241,13 +266,13 @@ function AnalyticsContent() {
             <div className="space-y-3">
               <div className="grid grid-cols-[2fr_1fr_1fr_1.2fr] gap-1 app-data-header">
                 <div>Player</div>
-                <div className="text-center">W</div>
-                <div className="text-center">L</div>
-                <div className="text-center">Win%</div>
+                <SortHeader label="W" column="wins" sortKey={sortKey} sortDesc={sortDesc} onSort={toggleSort} />
+                <SortHeader label="L" column="losses" sortKey={sortKey} sortDesc={sortDesc} onSort={toggleSort} />
+                <SortHeader label="Win%" column="winPercentage" sortKey={sortKey} sortDesc={sortDesc} onSort={toggleSort} />
               </div>
 
               {/* Player Stats */}
-              {playerStats.map((player, index) => (
+              {sortedStats.map((player, index) => (
                 <div key={player.name} className="grid grid-cols-[2fr_1fr_1fr_1.2fr] gap-1 app-data-row">
                   <div className="flex items-center">
                     <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-semibold mr-3">

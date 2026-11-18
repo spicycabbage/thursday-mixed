@@ -13,6 +13,7 @@ interface MatchCardProps {
   variant?: MatchCardVariant;
   labelMode?: MatchCardLabelMode;
   onSelect?: () => void;
+  onRequeue?: (matchId: number) => void;
   nextMatchId?: number;
   roster?: boolean;
   initialEditing?: boolean;
@@ -26,6 +27,7 @@ export default function MatchCard({
   variant = 'default',
   labelMode = 'round',
   onSelect,
+  onRequeue,
   nextMatchId,
   roster = false,
   initialEditing = false,
@@ -117,14 +119,29 @@ export default function MatchCard({
       </>
     );
 
+    const requeueButton =
+      onRequeue && isCompleted && !isLocked ? (
+        <button type="button" className="match-mini-requeue" onClick={() => onRequeue(match.id)}>
+          Requeue
+        </button>
+      ) : null;
+
     if (!onSelect) {
-      return <div className={`match-mini-card ${statusClass}`}>{body}</div>;
+      return (
+        <div className={`match-mini-card ${statusClass}`}>
+          {body}
+          {requeueButton}
+        </div>
+      );
     }
 
     return (
-      <button type="button" onClick={onSelect} className={`match-mini-card ${statusClass}`}>
-        {body}
-      </button>
+      <div className={`match-mini-card ${statusClass}`}>
+        <button type="button" onClick={onSelect} className="match-mini-open">
+          {body}
+        </button>
+        {requeueButton}
+      </div>
     );
   }
 
@@ -289,6 +306,12 @@ export default function MatchCard({
             </button>
           )}
         </div>
+      )}
+
+      {!readOnly && isCompleted && !tournament.isFinalized && onRequeue && (
+        <button type="button" onClick={() => onRequeue(match.id)} className="tab-btn-muted !py-2 mt-2">
+          Requeue
+        </button>
       )}
 
       {!readOnly && isEditing && !tournament.isFinalized && (

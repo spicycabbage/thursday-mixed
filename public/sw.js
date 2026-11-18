@@ -30,7 +30,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(request));
+    event.respondWith(staleWhileRevalidate(event, request));
     return;
   }
 
@@ -53,27 +53,34 @@ function freshGet(url) {
   return fetch(url, { cache: 'no-store', credentials: 'same-origin', redirect: 'follow' });
 }
 
-async function networkFirst(request) {
+function refreshDocument(cache, request) {
+  return fetch(request.url, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    redirect: 'follow',
+  })
+    .then(async (response) => {
+      if (response.ok && !response.redirected) {
+        await cache.put(request.url, response.clone());
+      }
+      return response;
+    })
+    .catch(() => null);
+}
+
+async function staleWhileRevalidate(event, request) {
   const cache = await caches.open(CACHE);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
-  try {
-    const response = await fetch(request.url, {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      redirect: 'follow',
-      signal: controller.signal,
-    });
-    if (response.ok && !response.redirected) {
-      await cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    const cached = (await cache.match(request)) || (await cache.match('/'));
-    return cached || Response.error();
-  } finally {
-    clearTimeout(timer);
+  const cached = await cache.match(request.url);
+  const refresh = refreshDocument(cache, request);
+
+  if (cached) {
+    event.waitUntil(refresh.then(() => undefined));
+    return cached;
   }
+
+  const response = await refresh;
+  if (response) return response;
+  return (await cache.match('/')) || Response.error();
 }
 
 async function cacheFirst(request) {

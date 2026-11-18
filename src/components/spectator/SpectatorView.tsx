@@ -91,13 +91,15 @@ function SpectatorChampions({
       </div>
 
       <div className="spectator-champions-teams">
-        {podium.map((team) => (
+        {podium.map((team) => {
+          const rank = team.rank ?? 0;
+          return (
           <div
             key={team.id}
-            className={`spectator-champion-card spectator-champion-place-${team.rank}`}
+            className={`spectator-champion-card spectator-champion-place-${rank}`}
           >
             <div className="spectator-champion-head">
-              <div className="spectator-champion-place">{PLACE_LABEL[team.rank] ?? team.rank}</div>
+              <div className="spectator-champion-place">{PLACE_LABEL[rank] ?? `${rank}`}</div>
               <div className="spectator-champion-badge">{team.label}</div>
               <div className="spectator-champion-names">
                 <span>{name(team.player1Id)}</span>
@@ -120,7 +122,8 @@ function SpectatorChampions({
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <button type="button" className="spectator-champions-cta" onClick={onViewStandings}>

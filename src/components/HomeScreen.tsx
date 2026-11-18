@@ -60,25 +60,29 @@ export default function HomeScreen({ initialOpen }: { initialOpen: OpenTournamen
     };
   }, []);
 
+  const showJoinCard = isAdmin || open.length > 0;
+
   return (
     <PageShell centered mobileOnly>
       <h1 className="lobby-app-name">GBC Tourney</h1>
-      <PageCard className="w-[92%] mb-4">
-        <PageContent>
-          <div className="space-y-4">
-            {isAdmin && (
-              <AppLinkButton href="/create-tournament" variant="success">
-                Create New Tournament
-              </AppLinkButton>
-            )}
-            {open.map((tournament) => (
-              <AppLinkButton key={tournament.id} href={`/tournament/${tournament.id}`} variant="success">
-                {tournament.eventType} · {tournament.name.trim() || 'Open tournament'}
-              </AppLinkButton>
-            ))}
-          </div>
-        </PageContent>
-      </PageCard>
+      {showJoinCard && (
+        <PageCard className="w-[92%] mb-4">
+          <PageContent>
+            <div className="space-y-4">
+              {isAdmin && (
+                <AppLinkButton href="/create-tournament" variant="success">
+                  Create New Tournament
+                </AppLinkButton>
+              )}
+              {open.map((tournament) => (
+                <AppLinkButton key={tournament.id} href={`/tournament/${tournament.id}`} variant="success">
+                  {tournament.eventType} · {tournament.name.trim() || 'Open tournament'}
+                </AppLinkButton>
+              ))}
+            </div>
+          </PageContent>
+        </PageCard>
+      )}
 
       <PageCard className="w-[92%]">
         <PageContent>

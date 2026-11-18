@@ -1,4 +1,4 @@
-import { sql, DbTournamentRow } from '@/lib/db';
+import { sql, DbTournamentRow, ensureTournamentMeta } from '@/lib/db';
 
 import {
 
@@ -69,6 +69,8 @@ type DbMatchRow = {
   completed: boolean;
 
   winner_team?: string | null;
+
+  queue_order?: number | null;
 
 };
 
@@ -194,6 +196,8 @@ function buildTournamentFromRows(
 
     completed: m.completed,
 
+    queueOrder: m.queue_order && m.queue_order > 0 ? m.queue_order : m.id,
+
     winnerTeam:
 
       m.winner_team === 'A' || m.winner_team === 'B' ? (m.winner_team as 'A' | 'B') : null,
@@ -241,6 +245,7 @@ function buildTournamentFromRows(
 
 
 export async function assembleTournament(id: string): Promise<Tournament | null> {
+  await ensureTournamentMeta();
   const rows = await sql<{
     tournament: DbTournamentRow;
     players: Omit<DbPlayerRow, 'tournament_id'>[];
@@ -272,7 +277,8 @@ export async function assembleTournament(id: string): Promise<Tournament | null>
           'score_a', m.score_a,
           'score_b', m.score_b,
           'completed', m.completed,
-          'winner_team', m.winner_team
+          'winner_team', m.winner_team,
+          'queue_order', coalesce(m.queue_order, 0)
         ) order by m.id)
         from matches m
         where m.tournament_id = t.id

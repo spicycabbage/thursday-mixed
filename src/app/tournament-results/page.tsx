@@ -4,7 +4,31 @@ import { useState, useLayoutEffect } from 'react';
 import { TrophyIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageShell } from '@/components/PageShell';
 import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
-import { EVENT_TYPES, EVENT_TYPE_LABELS, Tournament, eventTypeOf, getRankedTeams, type EventType } from '@/lib/gameLogic';
+import { EVENT_TYPES, EVENT_TYPE_LABELS, Tournament, eventTypeOf, getRankedTeams, type EventType, type Team } from '@/lib/gameLogic';
+
+const MEDALS = {
+  1: { label: 'Gold medal', fill: '#f5c518', edge: '#a16207', ribbon: '#eab308' },
+  2: { label: 'Silver medal', fill: '#e5e7eb', edge: '#6b7280', ribbon: '#9ca3af' },
+  3: { label: 'Bronze medal', fill: '#e8a15a', edge: '#9a3412', ribbon: '#c2410c' },
+} as const;
+
+type MedalPlace = keyof typeof MEDALS;
+
+function MedalIcon({ place }: { place: MedalPlace }) {
+  const medal = MEDALS[place];
+  return (
+    <svg viewBox="0 0 24 24" className="results-medal" role="img" aria-label={medal.label}>
+      <path d="M8 2.2h2.7L12 8.6H9.1L8 2.2z" fill={medal.ribbon} />
+      <path d="M16 2.2h-2.7L12 8.6h2.9L16 2.2z" fill={medal.edge} />
+      <circle cx="12" cy="15.1" r="6.2" fill={medal.edge} />
+      <circle cx="12" cy="15.1" r="5" fill={medal.fill} />
+      <circle cx="12" cy="15.1" r="3.5" fill="none" stroke={medal.edge} strokeWidth="0.7" />
+      <text x="12" y="16.7" textAnchor="middle" fontSize="5" fontWeight="700" fill={medal.edge}>
+        {place}
+      </text>
+    </svg>
+  );
+}
 
 function loadLocalTournaments(): Tournament[] {
   if (typeof window === 'undefined') return [];
@@ -29,7 +53,7 @@ function syncTournamentStorage(history: Tournament[], active: ActiveResponse | n
 
 export default function TournamentResultsPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [eventType, setEventType] = useState<EventType>('XD');
+  const [eventType, setEventType] = useState<EventType>('MD');
   const [syncing, setSyncing] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -166,42 +190,52 @@ interface TournamentResultCardProps {
   formatDate: (date: string) => string;
 }
 
+function teamNames(tournament: Tournament, team: Team) {
+  const nameOf = (id: number) => tournament.players.find((player) => player.id === id)?.name ?? '';
+  return `${nameOf(team.player1Id)} & ${nameOf(team.player2Id)}`;
+}
+
 function TournamentResultCard({ tournament, formatDate }: TournamentResultCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const rankedTeams = getRankedTeams(tournament);
-  const winner = rankedTeams[0];
+  const podium = rankedTeams.slice(0, 3);
+  const rest = rankedTeams.slice(3);
   const title = tournament.name?.trim();
   const getPlayerName = (id: number) => tournament.players.find((p) => p.id === id)?.name ?? '';
 
   return (
     <div className="tab-card results-card">
-      <div
-        className="p-4 bg-gray-900 cursor-pointer hover:bg-gray-800 transition-colors min-h-[4.5rem]"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="results-summary">
-          <div className="results-summary-date">
-            <div>
-              <p className="font-semibold text-white">{title || formatDate(tournament.date)}</p>
-              {title && <p className="text-xs font-bold text-gray-300">{formatDate(tournament.date)}</p>}
-            </div>
-          </div>
-          <div className="results-summary-winner">
-            <p className="results-summary-players">
-              {winner ? `${getPlayerName(winner.player1Id)} & ${getPlayerName(winner.player2Id)}` : ''}
-            </p>
-            <p className="results-summary-record">
-              <span>
-                {winner?.wins}-{winner?.losses}
-              </span>
-              <span>
-                {winner && winner.pointDiff > 0 ? '+' : ''}
-                {winner?.pointDiff}
-              </span>
-            </p>
-          </div>
+      <div className="results-podium">
+        <div className="results-podium-header">
+          <p className="results-podium-date">{formatDate(tournament.date)}</p>
+          {title && <p className="results-podium-name">{title}</p>}
         </div>
+        <ol className="results-podium-list">
+          {podium.map((team, index) => {
+            const place = (index + 1) as MedalPlace;
+            return (
+              <li key={team.id} className="results-podium-row">
+                <MedalIcon place={place} />
+                <button type="button" className="results-podium-players" onClick={() => setSelectedTeamId(team.id)}>
+                  {teamNames(tournament, team)}
+                </button>
+                <span className="results-podium-record">
+                  {team.wins}-{team.losses}
+                </span>
+                <span className="results-podium-diff">
+                  {team.pointDiff > 0 ? '+' : ''}
+                  {team.pointDiff}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        {rest.length > 0 && (
+          <button type="button" className="results-podium-more" onClick={() => setExpanded(!expanded)}>
+            {expanded ? 'Hide full standings' : 'Full standings'}
+          </button>
+        )}
       </div>
 
       {expanded && (
@@ -209,7 +243,7 @@ function TournamentResultCard({ tournament, formatDate }: TournamentResultCardPr
           <h4 className="font-semibold mb-1 text-gray-800">Final Team Standings</h4>
           <p className="results-standing-hint">Tap a player for their matches</p>
           <div className="space-y-2">
-            {rankedTeams.map((team) => (
+            {rest.map((team) => (
               <div key={team.id} className="results-standing-row">
                 <span className="results-standing-rank">{team.rank}</span>
                 <div className="results-standing-team">

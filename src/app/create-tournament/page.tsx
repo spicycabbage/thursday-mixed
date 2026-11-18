@@ -220,7 +220,7 @@ export default function CreateTournamentPage() {
   const enteredNames = teams.flatMap((team) => [team.player1, team.player2]);
   const duplicateKeys = duplicateNameKeys(enteredNames);
   const isStartDisabled =
-    filledCount < teamCount * 2 || !tournamentName.trim() || duplicateKeys.length > 0;
+    filledCount < teamCount * 2 || duplicateKeys.length > 0;
   const lastLabel = TEAM_LABELS[teamCount - 1];
 
   if (adminGate === 'loading') {
