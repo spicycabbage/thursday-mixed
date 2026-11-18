@@ -56,7 +56,7 @@ function SpectatorChampions({
   onViewStandings,
 }: {
   tournament: Tournament;
-  podium: Team[];
+  podium: Array<Team & { rank: number }>;
   onViewStandings: () => void;
 }) {
   const name = (playerId: number) =>
@@ -148,7 +148,10 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
   );
   const tournamentComplete = isTournamentComplete(tournament);
   const podium = useMemo(
-    () => getRankedTeams(tournament).filter((team) => team.rank <= 3),
+    () =>
+      getRankedTeams(tournament).filter(
+        (team): team is Team & { rank: number } => team.rank != null && team.rank <= 3
+      ),
     [tournament]
   );
 
