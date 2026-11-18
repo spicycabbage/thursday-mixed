@@ -2,7 +2,8 @@
 const nextConfig = {
   reactStrictMode: false,
   experimental: {
-    optimizePackageImports: ['@heroicons/react']
+    optimizePackageImports: ['@heroicons/react'],
+    agentUpgrade: 'security',
   },
 };
 
