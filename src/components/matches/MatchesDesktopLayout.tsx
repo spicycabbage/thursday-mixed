@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Tournament,
+  Team,
   getDesktopSpotlightMatches,
   getRankedTeams,
   isTournamentComplete,
@@ -29,7 +30,10 @@ export default function MatchesDesktopLayout({
 
   const tournamentComplete = isTournamentComplete(tournament);
   const podium = useMemo(
-    () => getRankedTeams(tournament).filter((team) => team.rank <= 3),
+    () =>
+      getRankedTeams(tournament).filter(
+        (team): team is Team & { rank: number } => team.rank != null && team.rank <= 3
+      ),
     [tournament]
   );
 
