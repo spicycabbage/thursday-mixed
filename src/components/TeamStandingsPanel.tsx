@@ -1,13 +1,16 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Tournament, getRankedTeams, isTournamentComplete } from '@/lib/gameLogic';
+import { Tournament, getCourtNumbers, getRankedTeams, isTournamentComplete, normalizeCourtNumbers } from '@/lib/gameLogic';
 
 interface TeamStandingsPanelProps {
   tournament: Tournament;
   compact?: boolean;
   onFinalize?: () => void;
   onTeamSelect?: (teamId: number) => void;
+  canEditCourts?: boolean;
+  onSaveCourtNumbers?: (courtNumbers: number[]) => Promise<void> | void;
 }
 
 export default function TeamStandingsPanel({
@@ -15,12 +18,40 @@ export default function TeamStandingsPanel({
   compact = false,
   onFinalize,
   onTeamSelect,
+  canEditCourts = false,
+  onSaveCourtNumbers,
 }: TeamStandingsPanelProps) {
   const rankedTeams = getRankedTeams(tournament);
   const showFinalize = !!onFinalize && isTournamentComplete(tournament) && !tournament.isFinalized;
+  const currentCourts = getCourtNumbers(tournament);
+  const [draftCourts, setDraftCourts] = useState<number[]>(currentCourts);
+  const [savingCourts, setSavingCourts] = useState(false);
+  const [courtError, setCourtError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraftCourts(currentCourts);
+    setCourtError(null);
+  }, [currentCourts.join('-')]);
 
   const getPlayerName = (playerId: number) =>
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
+
+  const showCourtEditor = canEditCourts && !!onSaveCourtNumbers && !tournament.isFinalized;
+  const normalizedDraft = normalizeCourtNumbers(draftCourts, tournament.teams.length);
+  const courtsUnchanged = currentCourts.length === draftCourts.length && currentCourts.every((court, index) => court === draftCourts[index]);
+
+  const handleSaveCourts = async () => {
+    if (!onSaveCourtNumbers || !normalizedDraft || courtsUnchanged || savingCourts) return;
+    setSavingCourts(true);
+    setCourtError(null);
+    try {
+      await onSaveCourtNumbers(normalizedDraft);
+    } catch (error) {
+      setCourtError(error instanceof Error ? error.message : 'Could not update court numbers.');
+    } finally {
+      setSavingCourts(false);
+    }
+  };
 
   return (
     <div className={compact ? 'team-standings-panel team-standings-panel-compact' : 'team-standings-panel'}>
@@ -74,6 +105,40 @@ export default function TeamStandingsPanel({
           );
         })}
       </div>
+
+      {showCourtEditor && (
+        <div className="team-standings-courts">
+          <h5 className="team-standings-courts-title">Court numbers</h5>
+          <div className="team-standings-courts-row">
+            {draftCourts.map((court, index) => (
+              <input
+                key={index}
+                type="number"
+                min={1}
+                max={999}
+                value={Number.isFinite(court) ? court : ''}
+                onChange={(e) => {
+                  const value = e.target.value === '' ? NaN : Number(e.target.value);
+                  setDraftCourts((current) => current.map((n, i) => (i === index ? value : n)));
+                }}
+                aria-label={`Court ${index + 1} number`}
+              />
+            ))}
+            <button
+              type="button"
+              className="team-standings-courts-save"
+              onClick={handleSaveCourts}
+              disabled={!normalizedDraft || courtsUnchanged || savingCourts}
+            >
+              {savingCourts ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+          {!normalizedDraft && (
+            <p className="team-standings-courts-error">Enter a unique court number for each court.</p>
+          )}
+          {courtError && <p className="team-standings-courts-error">{courtError}</p>}
+        </div>
+      )}
 
       {showFinalize && (
         <button type="button" onClick={onFinalize} className="team-standings-finalize-btn">

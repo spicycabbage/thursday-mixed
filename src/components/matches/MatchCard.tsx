@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Tournament, Match, validateScore, getTeamLabel } from '@/lib/gameLogic';
+import { Tournament, Match, validateScore, getTeamLabel, formatCourtLabel } from '@/lib/gameLogic';
 
 export type MatchCardVariant = 'default' | 'spotlight' | 'mini';
 export type MatchCardLabelMode = 'round' | 'sequential';
@@ -157,11 +157,12 @@ export default function MatchCard({
         ? 'match-mini-active'
         : 'match-mini-future';
     const matchLabel = labelMode === 'sequential' ? `#${match.id}` : `R${match.round}`;
+    const miniCourtLabel = formatCourtLabel(match.court, true);
     const body = (
       <>
         <div className="match-mini-top">
           <span className="match-mini-round">{matchLabel}</span>
-          <span className="match-mini-court">Ct {match.court}</span>
+          {miniCourtLabel ? <span className="match-mini-court">{miniCourtLabel}</span> : null}
         </div>
         <div className="match-mini-teams">
           <span className="match-mini-team-a">{teamALabel}</span>
@@ -223,9 +224,13 @@ export default function MatchCard({
   return (
     <div className={containerClass}>
       <p className={isSpotlight ? 'match-caption-spotlight' : 'tab-caption mb-3'}>
-        {labelMode === 'sequential'
-          ? `Match ${match.id}`
-          : `Round ${match.round} · Court ${match.court}`}
+        {(() => {
+          const courtLabel = formatCourtLabel(match.court);
+          if (labelMode === 'sequential') {
+            return courtLabel ? `Match ${match.id} · ${courtLabel}` : `Match ${match.id}`;
+          }
+          return courtLabel ? `Round ${match.round} · ${courtLabel}` : `Round ${match.round}`;
+        })()}
       </p>
 
       <div className="space-y-2">

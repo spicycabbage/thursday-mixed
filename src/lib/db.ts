@@ -89,6 +89,7 @@ const TOURNAMENT_META_SQL = `
 alter table tournaments add column if not exists event_type text not null default 'XD';
 alter table tournaments add column if not exists name text not null default '';
 alter table matches add column if not exists queue_order int not null default 0;
+alter table tournaments add column if not exists court_numbers int[];
 `;
 
 let metaReady: Promise<void> | null = null;
@@ -141,4 +142,5 @@ export type DbTournamentRow = {
   current_round: number;
   is_finalized: boolean;
   created_at: string;
+  court_numbers?: number[] | null;
 };

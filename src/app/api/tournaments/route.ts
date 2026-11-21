@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ADMIN_COOKIE, adminSecret, hasAdminCookie } from '@/lib/adminAuth';
 import { ensureSchema, ensureTournamentMeta, sql } from '@/lib/db';
-import { createTournament, duplicateNameKeys, EVENT_TYPE_LABELS, isEventType, isTeamCount, nameKey, normalizeName } from '@/lib/gameLogic';
+import { createTournament, duplicateNameKeys, EVENT_TYPE_LABELS, isEventType, isTeamCount, nameKey, normalizeCourtNumbers, normalizeName } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 
     await ensureSchema();
     await ensureTournamentMeta();
-    const { teams, date, name, eventType } = await req.json();
+    const { teams, date, name, eventType, courtNumbers: rawCourtNumbers } = await req.json();
     if (!Array.isArray(teams) || !isTeamCount(teams.length)) {
       return NextResponse.json({ error: 'Invalid input: need 6, 7, 8, or 9 teams with 2 players each' }, { status: 400 });
     }
@@ -54,13 +54,19 @@ export async function POST(req: NextRequest) {
       player2: knownByKey.get(nameKey(team.player2 ?? '')) ?? normalizeName(team.player2 ?? ''),
     }));
 
+    const courtNumbers = normalizeCourtNumbers(rawCourtNumbers, teams.length);
+    if (!courtNumbers) {
+      return NextResponse.json({ error: 'Enter a unique court number for each court' }, { status: 400 });
+    }
+
     const t = createTournament(canonicalTeams, date, {
       name: trimmedName || EVENT_TYPE_LABELS[eventType],
       eventType,
+      courtNumbers,
     });
 
-    await sql`insert into tournaments (id, access_code, name, event_type, date, current_round, is_finalized)
-      values (${t.id}, ${''}, ${t.name}, ${t.eventType}, ${t.date}, ${t.currentRound}, ${t.isFinalized})`;
+    await sql`insert into tournaments (id, access_code, name, event_type, date, current_round, is_finalized, court_numbers)
+      values (${t.id}, ${''}, ${t.name}, ${t.eventType}, ${t.date}, ${t.currentRound}, ${t.isFinalized}, ${courtNumbers})`;
 
     for (const p of t.players) {
       await sql`insert into players (tournament_id, id, name, team_id, total_score)

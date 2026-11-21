@@ -16,6 +16,8 @@ import {
   normalizeName,
   matchCountForTeams,
   courtCountForTeams,
+  defaultCourtNumbers,
+  normalizeCourtNumbers,
   type EventType,
   type TeamCount,
 } from '@/lib/gameLogic';
@@ -42,6 +44,7 @@ export default function CreateTournamentPage() {
     Array.from({ length: 6 }, () => [[], []])
   );
   const [knownNames, setKnownNames] = useState<string[]>([]);
+  const [courtNumbers, setCourtNumbers] = useState<number[]>(() => defaultCourtNumbers(6));
 
   const handleTeamCountChange = (count: TeamCount) => {
     setTeamCount(count);
@@ -51,6 +54,12 @@ export default function CreateTournamentPage() {
     setSuggestions((current) =>
       Array.from({ length: count }, (_, index) => current[index] ?? [[], []])
     );
+    setCourtNumbers((current) => {
+      const nextLength = courtCountForTeams(count);
+      const next = current.slice(0, nextLength);
+      while (next.length < nextLength) next.push(next.length + 1);
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -163,6 +172,7 @@ export default function CreateTournamentPage() {
           date: tournamentDate,
           name: tournamentName.trim(),
           eventType,
+          courtNumbers,
         }),
       });
       if (res.status === 401) {
@@ -220,8 +230,9 @@ export default function CreateTournamentPage() {
 
   const enteredNames = teams.flatMap((team) => [team.player1, team.player2]);
   const duplicateKeys = duplicateNameKeys(enteredNames);
+  const normalizedCourts = normalizeCourtNumbers(courtNumbers, teamCount);
   const isStartDisabled =
-    filledCount < teamCount * 2 || duplicateKeys.length > 0;
+    filledCount < teamCount * 2 || duplicateKeys.length > 0 || !normalizedCourts;
   const lastLabel = TEAM_LABELS[teamCount - 1];
 
   if (adminGate === 'loading') {
@@ -334,6 +345,32 @@ export default function CreateTournamentPage() {
                 className="app-input"
               />
             </div>
+          </div>
+          <div className="mt-4">
+            <label className="app-label mb-1">Court numbers</label>
+            <div className="flex gap-2">
+              {courtNumbers.map((court, index) => (
+                <input
+                  key={index}
+                  type="number"
+                  min={1}
+                  max={999}
+                  value={Number.isFinite(court) ? court : ''}
+                  onChange={(e) => {
+                    const value = e.target.value === '' ? NaN : Number(e.target.value);
+                    setCourtNumbers((current) => current.map((n, i) => (i === index ? value : n)));
+                  }}
+                  className="app-input w-20"
+                  aria-label={`Court ${index + 1} number`}
+                />
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Optional. Defaults to {defaultCourtNumbers(teamCount).join(', ')}.
+            </p>
+            {!normalizedCourts && (
+              <p className="app-alert-error mt-2">Enter a unique court number for each court.</p>
+            )}
           </div>
         </div>
 

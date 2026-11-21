@@ -19,6 +19,8 @@ interface MatchesDesktopLayoutProps {
   onScoreUpdate: (matchId: number, scoreA: number, scoreB: number, isEdit?: boolean) => void;
   onRequeue?: (matchId: number) => void;
   onFinalize?: () => void;
+  canEditCourts?: boolean;
+  onSaveCourtNumbers?: (courtNumbers: number[]) => Promise<void> | void;
 }
 
 export default function MatchesDesktopLayout({
@@ -26,6 +28,8 @@ export default function MatchesDesktopLayout({
   onScoreUpdate,
   onRequeue,
   onFinalize,
+  canEditCourts,
+  onSaveCourtNumbers,
 }: MatchesDesktopLayoutProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [modalMatchId, setModalMatchId] = useState<number | null>(null);
@@ -195,6 +199,8 @@ export default function MatchesDesktopLayout({
           tournament={tournament}
           onFinalize={onFinalize}
           onTeamSelect={setSelectedTeamId}
+          canEditCourts={canEditCourts}
+          onSaveCourtNumbers={onSaveCourtNumbers}
         />
       </aside>
 

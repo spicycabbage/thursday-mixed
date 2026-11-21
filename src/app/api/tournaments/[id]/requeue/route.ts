@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ensureTournamentMeta, sql } from '@/lib/db';
-import { assembleTournament } from '@/lib/tournamentRepo';
+import { assembleTournament, persistMatchCourts } from '@/lib/tournamentRepo';
+import { UNASSIGNED_COURT, syncPlayingCourts } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -43,7 +44,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           score_b = null,
           completed = false,
           winner_team = null,
-          queue_order = ${nextOrder}
+          queue_order = ${nextOrder},
+          court = ${UNASSIGNED_COURT}
       where tournament_id = ${id} and id = ${numericMatchId}
     `;
 
@@ -59,7 +61,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     `;
 
     const updated = await assembleTournament(id);
-    if (updated) await broadcastTournamentUpdate(id, updated);
+    if (updated) {
+      syncPlayingCourts(updated);
+      await persistMatchCourts(id, updated.matches);
+      await broadcastTournamentUpdate(id, updated);
+    }
     return NextResponse.json(updated);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Server error';

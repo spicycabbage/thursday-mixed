@@ -45,6 +45,7 @@ export default function TournamentScreen({
   const [loading, setLoading] = useState(!initialTournament);
   const [toast, setToast] = useState<string | null>(null);
   const [showPlayersModal, setShowPlayersModal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const tabletLayout = useSyncExternalStore(
     subscribeTabletLayout,
     getTabletLayoutSnapshot,
@@ -55,6 +56,22 @@ export default function TournamentScreen({
   useEffect(() => {
     latestTournamentRef.current = tournament;
   }, [tournament]);
+
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/session', { cache: 'no-store' });
+        const data = res.ok ? await res.json() : null;
+        if (!ignore) setIsAdmin(!!data?.admin);
+      } catch {
+        if (!ignore) setIsAdmin(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!showPlayersModal) return;
@@ -276,6 +293,22 @@ export default function TournamentScreen({
     } catch {}
   };
 
+  const handleSaveCourtNumbers = async (courtNumbers: number[]) => {
+    if (!tournament) return;
+    const res = await fetch(`/api/tournaments/${tournament.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courtNumbers }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.error || 'Could not update court numbers.');
+    }
+    const updated = await res.json();
+    setTournament(updated);
+    try { localStorage.setItem('currentTournament', JSON.stringify(updated)); } catch {}
+  };
+
   if (loading || tabletLayout === null) {
     return <PageLoading message="Loading tournament..." className="page-shell-tournament" />;
   }
@@ -353,6 +386,8 @@ export default function TournamentScreen({
                 onScoreUpdate={handleScoreUpdate}
                 onRequeue={handleRequeue}
                 onFinalize={handleFinalizeTournament}
+                canEditCourts={isAdmin}
+                onSaveCourtNumbers={handleSaveCourtNumbers}
               />
             </div>
 

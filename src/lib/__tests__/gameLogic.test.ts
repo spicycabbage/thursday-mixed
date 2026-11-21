@@ -16,6 +16,11 @@ import {
   getDesktopSpotlightMatches,
   matchesShareParticipants,
   requeueMatch,
+  UNASSIGNED_COURT,
+  defaultCourtNumbers,
+  formatCourtLabel,
+  normalizeCourtNumbers,
+  relabelCourtNumbers,
 } from '../gameLogic';
 
 const sampleTeams = [
@@ -271,7 +276,7 @@ describe('Game Logic', () => {
       expect(matchesShareParticipants(spotlight[1], spotlight[2])).toBe(false);
 
       const inferred = getDesktopSpotlightMatches(tournament.matches);
-      expect(inferred.spotlight).toHaveLength(3);
+      expect(inferred.spotlight).toHaveLength(2);
     });
 
     it('should not place matches with shared players in spotlight together', () => {
@@ -323,6 +328,52 @@ describe('Game Logic', () => {
       expect(after.deferred.at(-1)?.id).toBe(1);
       expect(after.spotlight.map((item) => item.id)).not.toContain(1);
       expect(next.teams.reduce((sum, team) => sum + team.wins, 0)).toBe(1);
+    });
+  });
+
+  describe('court numbers', () => {
+    it('assigns custom court numbers only to spotlight matches', () => {
+      const tournament = createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] });
+      expect(tournament.courtNumbers).toEqual([11, 12]);
+      expect(defaultCourtNumbers(6)).toEqual([1, 2]);
+      expect(defaultCourtNumbers(9)).toEqual([1, 2, 3]);
+      expect(normalizeCourtNumbers([11, 12], 6)).toEqual([11, 12]);
+      expect(normalizeCourtNumbers([11, 11], 6)).toBeNull();
+      expect(formatCourtLabel(0)).toBeNull();
+      expect(formatCourtLabel(11)).toBe('Court 11');
+      expect(formatCourtLabel(11, true)).toBe('Ct 11');
+
+      const { spotlight, deferred } = getDesktopSpotlightMatches(tournament.matches, 2);
+      expect(spotlight.map((match) => match.court).sort((a, b) => a - b)).toEqual([11, 12]);
+      expect(deferred.every((match) => match.court === UNASSIGNED_COURT)).toBe(true);
+    });
+
+    it('gives the freed court number to the next queued match', () => {
+      const tournament = createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] });
+      const firstCourt11 = tournament.matches.find((match) => !match.completed && match.court === 11);
+      expect(firstCourt11).toBeTruthy();
+      const next = updateMatchScore(tournament, firstCourt11!.id, 21, 15);
+      const completed = next.matches.find((match) => match.id === firstCourt11!.id);
+      expect(completed?.completed).toBe(true);
+      expect(completed?.court).toBe(11);
+      const playing = getDesktopSpotlightMatches(next.matches, 2).spotlight;
+      expect(playing).toHaveLength(2);
+      expect(playing.some((match) => match.id !== firstCourt11!.id && match.court === 11)).toBe(true);
+      expect(playing.map((match) => match.court).sort((a, b) => a - b)).toEqual([11, 12]);
+    });
+
+    it('relabels finished and playing matches when court numbers change', () => {
+      const tournament = createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] });
+      const firstCourt11 = tournament.matches.find((match) => !match.completed && match.court === 11)!;
+      const scored = updateMatchScore(tournament, firstCourt11.id, 21, 15);
+      const relabeled = relabelCourtNumbers(scored, [21, 22]);
+      expect(relabeled.courtNumbers).toEqual([21, 22]);
+      const finished = relabeled.matches.find((match) => match.id === firstCourt11.id);
+      expect(finished?.completed).toBe(true);
+      expect(finished?.court).toBe(21);
+      const playing = getDesktopSpotlightMatches(relabeled.matches, 2).spotlight;
+      expect(playing.map((match) => match.court).sort((a, b) => a - b)).toEqual([21, 22]);
+      expect(relabeled.matches.filter((match) => match.court === 11 || match.court === 12)).toHaveLength(0);
     });
   });
 });

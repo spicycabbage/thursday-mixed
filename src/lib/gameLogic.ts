@@ -78,6 +78,7 @@ export interface Tournament {
   currentRound: number;
   isFinalized: boolean;
   createdAt: Date;
+  courtNumbers?: number[];
 }
 
 export interface TeamRegistration {
@@ -91,6 +92,97 @@ export function isTeamCount(value: number): value is TeamCount {
 
 export function courtCountForTeams(teamCount: number): number {
   return teamCount === 9 ? 3 : 2;
+}
+
+
+export const UNASSIGNED_COURT = 0;
+
+export function defaultCourtNumbers(teamCount: number): number[] {
+  return Array.from({ length: courtCountForTeams(teamCount) }, (_, index) => index + 1);
+}
+
+export function normalizeCourtNumbers(input: unknown, teamCount: number): number[] | null {
+  const count = courtCountForTeams(teamCount);
+  if (input == null) return defaultCourtNumbers(teamCount);
+  if (!Array.isArray(input) || input.length !== count) return null;
+  const nums = input.map((value) => {
+    if (typeof value === 'number' && Number.isInteger(value)) return value;
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim());
+    return NaN;
+  });
+  if (nums.some((value) => !Number.isInteger(value) || value < 1 || value > 999)) return null;
+  if (new Set(nums).size !== nums.length) return null;
+  return nums;
+}
+
+export function getCourtNumbers(tournament: {
+  teams: { length: number };
+  courtNumbers?: number[] | null;
+}): number[] {
+  const fallback = defaultCourtNumbers(tournament.teams.length || 6);
+  const nums = tournament.courtNumbers;
+  if (!Array.isArray(nums) || nums.length !== fallback.length) return fallback;
+  if (nums.some((value) => !Number.isInteger(value) || value < 1)) return fallback;
+  return nums;
+}
+
+export function formatCourtLabel(court: number, short = false): string | null {
+  if (!court || court <= 0) return null;
+  return short ? `Ct ${court}` : `Court ${court}`;
+}
+
+export function syncPlayingCourts(
+  tournament: Tournament,
+  options?: { freedCourt?: number }
+): Tournament {
+  const courtNumbers = getCourtNumbers(tournament);
+  const { spotlight } = getDesktopSpotlightMatches(tournament.matches, courtNumbers.length);
+  const spotlightIds = new Set(spotlight.map((match) => match.id));
+
+  for (const match of tournament.matches) {
+    if (!match.completed && !spotlightIds.has(match.id)) {
+      match.court = UNASSIGNED_COURT;
+    }
+  }
+
+  const used = new Set<number>();
+  const needsCourt: Match[] = [];
+  for (const match of spotlight) {
+    if (match.court && courtNumbers.includes(match.court) && !used.has(match.court)) {
+      used.add(match.court);
+    } else {
+      needsCourt.push(match);
+    }
+  }
+
+  const free = courtNumbers.filter((court) => !used.has(court));
+  if (options?.freedCourt && free.includes(options.freedCourt)) {
+    free.splice(free.indexOf(options.freedCourt), 1);
+    free.unshift(options.freedCourt);
+  }
+
+  for (const match of needsCourt) {
+    const next = free.shift();
+    if (next != null) match.court = next;
+  }
+
+  return tournament;
+}
+
+/** Relabel stored court numbers, including already-finished matches. */
+export function relabelCourtNumbers(tournament: Tournament, nextNumbers: number[]): Tournament {
+  const previous = getCourtNumbers(tournament);
+  if (previous.length !== nextNumbers.length) {
+    tournament.courtNumbers = nextNumbers;
+    return syncPlayingCourts(tournament);
+  }
+  const mapped = new Map(previous.map((court, index) => [court, nextNumbers[index]]));
+  for (const match of tournament.matches) {
+    const next = mapped.get(match.court);
+    if (next != null) match.court = next;
+  }
+  tournament.courtNumbers = nextNumbers;
+  return tournament;
 }
 
 export function matchCountForTeams(teamCount: number): number {
@@ -285,7 +377,7 @@ export function validateScore(scoreA: number, scoreB: number): boolean {
 export function createTournament(
   teamRegistrations: TeamRegistration[],
   date?: string,
-  options?: { name?: string; eventType?: EventType }
+  options?: { name?: string; eventType?: EventType; courtNumbers?: number[] }
 ): Tournament {
   const teams: Team[] = teamRegistrations.map((reg, index) => {
     const teamId = index + 1;
@@ -345,7 +437,7 @@ export function createTournament(
       matches.push({
         id: matchId++,
         round: roundIndex + 1,
-        court: matchup.court,
+        court: UNASSIGNED_COURT,
         teamAId: matchup.teamA,
         teamBId: matchup.teamB,
         teamA: { player1: aP1, player2: aP2 },
@@ -358,7 +450,7 @@ export function createTournament(
     });
   });
 
-  return {
+  const tournament: Tournament = {
     id: generateTournamentId(),
     name: options?.name?.trim() ?? '',
     eventType: options?.eventType ?? 'XD',
@@ -379,8 +471,11 @@ export function createTournament(
     currentRound: 1,
     isFinalized: false,
     createdAt: new Date(),
+    courtNumbers: options?.courtNumbers ?? defaultCourtNumbers(teamCount),
   };
+  return syncPlayingCourts(tournament);
 }
+
 
 function applyMatchStats(
   tournament: Tournament,
@@ -477,6 +572,8 @@ export function updateMatchScore(
     return tournament;
   }
 
+  const wasCompleted = match.completed;
+  const freedCourt = match.court;
   recomputeAllStats(updatedTournament, { id: matchId, scoreA, scoreB });
 
   if (!isEdit) {
@@ -485,6 +582,9 @@ export function updateMatchScore(
     const lastRound = getTournamentRoundCount(updatedTournament.matches);
     if (roundCompleted && match.round < lastRound) {
       updatedTournament.currentRound = match.round + 1;
+    }
+    if (!wasCompleted) {
+      syncPlayingCourts(updatedTournament, { freedCourt: freedCourt || undefined });
     }
   }
 
@@ -518,12 +618,14 @@ export function requeueMatch(tournament: Tournament, matchId: number): Tournamen
   match.completed = false;
   match.winnerTeam = null;
   match.queueOrder = nextOrder;
+  match.court = UNASSIGNED_COURT;
 
   recomputeAllStats(updatedTournament);
   const incompleteRounds = updatedTournament.matches
     .filter((item) => !item.completed)
     .map((item) => item.round);
   updatedTournament.currentRound = Math.min(...incompleteRounds);
+  syncPlayingCourts(updatedTournament);
 
   return updatedTournament;
 }
@@ -638,12 +740,12 @@ export function matchesConflictWithAny(match: Match, others: Match[]): boolean {
 
 /**
  * Pick up to maxSpotlight incomplete matches for desktop spotlight.
- * Defaults to the tournament court count (2, or 3 for 9-team events).
+ * Defaults to 2 courts; callers should pass the tournament court count (3 for 9-team events).
  * Prefer no shared players; if none qualify after scanning the queue, fill with the next match anyway.
  */
 export function getDesktopSpotlightMatches(
   matches: Match[],
-  maxSpotlight = Math.max(2, ...matches.map((match) => match.court || 1))
+  maxSpotlight = 2
 ): { spotlight: Match[]; deferred: Match[] } {
   const incomplete = [...matches]
     .filter((m) => !m.completed)

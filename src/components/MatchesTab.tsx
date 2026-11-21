@@ -12,9 +12,11 @@ interface MatchesTabProps {
   onScoreUpdate: (matchId: number, scoreA: number, scoreB: number, isEdit?: boolean) => void;
   onRequeue?: (matchId: number) => void;
   onFinalize?: () => void;
+  canEditCourts?: boolean;
+  onSaveCourtNumbers?: (courtNumbers: number[]) => Promise<void> | void;
 }
 
-export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFinalize }: MatchesTabProps) {
+export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFinalize, canEditCourts, onSaveCourtNumbers }: MatchesTabProps) {
   const [selectedRound, setSelectedRound] = useState(tournament.currentRound);
   const [autoFollow, setAutoFollow] = useState(true);
 
@@ -101,6 +103,8 @@ export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFin
         onScoreUpdate={onScoreUpdate}
         onRequeue={onRequeue}
         onFinalize={onFinalize}
+        canEditCourts={canEditCourts}
+        onSaveCourtNumbers={onSaveCourtNumbers}
       />
     </div>
   );

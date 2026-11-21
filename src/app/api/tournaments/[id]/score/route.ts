@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import { assembleTournament } from '@/lib/tournamentRepo';
-import { validateScore, getWinnerTeam } from '@/lib/gameLogic';
+import { assembleTournament, persistMatchCourts } from '@/lib/tournamentRepo';
+import { validateScore, getWinnerTeam, syncPlayingCourts } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -33,8 +33,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
     }
 
+    const freedCourt = Number(match.court) || undefined;
     const updated = await assembleTournament(id);
     if (updated) {
+      syncPlayingCourts(updated, { freedCourt });
+      await persistMatchCourts(id, updated.matches);
       await broadcastTournamentUpdate(id, updated, {
         matchId: Number(matchId),
         round: match.round as number,

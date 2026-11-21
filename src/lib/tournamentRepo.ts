@@ -227,6 +227,7 @@ function buildTournamentFromRows(
     isFinalized: tr.is_finalized,
 
     createdAt: new Date(tr.created_at),
+    courtNumbers: Array.isArray(tr.court_numbers) ? tr.court_numbers : undefined,
 
   };
 
@@ -359,4 +360,8 @@ export async function assembleTournaments(rows: DbTournamentRow[]): Promise<Tour
 
 }
 
-
+export async function persistMatchCourts(tournamentId: string, matches: Match[]): Promise<void> {
+  for (const match of matches) {
+    await sql`update matches set court = ${match.court} where tournament_id = ${tournamentId} and id = ${match.id}`;
+  }
+}
