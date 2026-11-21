@@ -143,18 +143,10 @@ export default function MatchCard({
       </>
     );
 
-    const requeueButton =
-      onRequeue && isCompleted && !isLocked ? (
-        <button type="button" className="match-mini-requeue" onClick={() => onRequeue(match.id)}>
-          Requeue
-        </button>
-      ) : null;
-
     if (!onSelect) {
       return (
         <div className={`match-mini-card ${statusClass}`}>
           {body}
-          {requeueButton}
         </div>
       );
     }
@@ -164,7 +156,6 @@ export default function MatchCard({
         <button type="button" onClick={onSelect} className="match-mini-open">
           {body}
         </button>
-        {requeueButton}
       </div>
     );
   }

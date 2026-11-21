@@ -189,7 +189,6 @@ export default function MatchesDesktopLayout({
                       roster
                       labelMode="sequential"
                       onSelect={() => setModalMatchId(match.id)}
-                      onRequeue={requestRequeue}
                     />
                   </div>
                 ))}
