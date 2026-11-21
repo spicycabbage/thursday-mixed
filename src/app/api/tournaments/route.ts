@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     await ensureTournamentMeta();
     const { teams, date, name, eventType } = await req.json();
     if (!Array.isArray(teams) || !isTeamCount(teams.length)) {
-      return NextResponse.json({ error: 'Invalid input: need 6, 7, or 8 teams with 2 players each' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid input: need 6, 7, 8, or 9 teams with 2 players each' }, { status: 400 });
     }
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (trimmedName.length > 40) {

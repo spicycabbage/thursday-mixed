@@ -11,6 +11,7 @@ import {
   NUM_ROUNDS,
   buildRoundMatchups,
   matchCountForTeams,
+  courtCountForTeams,
   getWinnerTeam,
   getDesktopSpotlightMatches,
   matchesShareParticipants,
@@ -162,7 +163,7 @@ describe('Game Logic', () => {
 
       rounds.forEach((round) => {
         expect(round.length).toBeGreaterThan(0);
-        expect(round.length).toBeLessThanOrEqual(2);
+        expect(round.length).toBeLessThanOrEqual(courtCountForTeams(teamCount));
         const playing = new Set();
         round.forEach((match) => {
           expect(playing.has(match.teamA)).toBe(false);
@@ -200,7 +201,20 @@ describe('Game Logic', () => {
       assertRoundRobin(8);
     });
 
-    it('creates 7- and 8-team tournaments from the registration list', () => {
+    it('builds a 36-game schedule for 9 teams on 12 full rounds of 3 courts', () => {
+      const rounds = buildRoundMatchups(9);
+      expect(rounds).toHaveLength(12);
+      expect(rounds.every((round) => round.length === 3)).toBe(true);
+      const courts = new Set(rounds.flat().map((match) => match.court));
+      expect([...courts].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+      expect(courtCountForTeams(9)).toBe(3);
+      expect(courtCountForTeams(6)).toBe(2);
+      expect(courtCountForTeams(7)).toBe(2);
+      expect(courtCountForTeams(8)).toBe(2);
+      assertRoundRobin(9);
+    });
+
+    it('creates 7-, 8-, and 9-team tournaments from the registration list', () => {
       const seven = createTournament([
         ...sampleTeams,
         { player1: 'Gina', player2: 'Grace' },
@@ -218,6 +232,17 @@ describe('Game Logic', () => {
       expect(eight.teams).toHaveLength(8);
       expect(eight.matches).toHaveLength(28);
       expect(eight.teams[7].label).toBe('H');
+
+      const nine = createTournament([
+        ...sampleTeams,
+        { player1: 'Gina', player2: 'Grace' },
+        { player1: 'Hank', player2: 'Holly' },
+        { player1: 'Ivy', player2: 'Iris' },
+      ]);
+      expect(nine.teams).toHaveLength(9);
+      expect(nine.players).toHaveLength(18);
+      expect(nine.matches).toHaveLength(36);
+      expect(nine.teams[8].label).toBe('I');
     });
   });
 
@@ -229,6 +254,26 @@ describe('Game Logic', () => {
   });
 
   describe('getDesktopSpotlightMatches', () => {
+    it('spotlights 3 non-conflicting matches for a 9-team tournament', () => {
+      const tournament = createTournament([
+        ...sampleTeams,
+        { player1: 'Gina', player2: 'Grace' },
+        { player1: 'Hank', player2: 'Holly' },
+        { player1: 'Ivy', player2: 'Iris' },
+      ]);
+      const { spotlight } = getDesktopSpotlightMatches(
+        tournament.matches,
+        courtCountForTeams(tournament.teams.length)
+      );
+      expect(spotlight).toHaveLength(3);
+      expect(matchesShareParticipants(spotlight[0], spotlight[1])).toBe(false);
+      expect(matchesShareParticipants(spotlight[0], spotlight[2])).toBe(false);
+      expect(matchesShareParticipants(spotlight[1], spotlight[2])).toBe(false);
+
+      const inferred = getDesktopSpotlightMatches(tournament.matches);
+      expect(inferred.spotlight).toHaveLength(3);
+    });
+
     it('should not place matches with shared players in spotlight together', () => {
       const tournament = createTournament(sampleTeams);
       const { spotlight, deferred } = getDesktopSpotlightMatches(tournament.matches);

@@ -6,6 +6,7 @@ import {
   Tournament,
   Team,
   getDesktopSpotlightMatches,
+  courtCountForTeams,
   getRankedTeams,
   isTournamentComplete,
 } from '@/lib/gameLogic';
@@ -142,8 +143,8 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
     [tournament.matches]
   );
   const { spotlight, deferred } = useMemo(
-    () => getDesktopSpotlightMatches(sortedMatches),
-    [sortedMatches]
+    () => getDesktopSpotlightMatches(sortedMatches, courtCountForTeams(tournament.teams.length)),
+    [sortedMatches, tournament.teams.length]
   );
   const completed = useMemo(
     () => sortedMatches.filter((match) => match.completed),

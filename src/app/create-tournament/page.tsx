@@ -15,6 +15,7 @@ import {
   nameKey,
   normalizeName,
   matchCountForTeams,
+  courtCountForTeams,
   type EventType,
   type TeamCount,
 } from '@/lib/gameLogic';
@@ -338,7 +339,7 @@ export default function CreateTournamentPage() {
 
         <PageContent className="registration-page-content">
           <p className="page-subtitle text-center mb-4 md:text-left md:mb-6">
-            Register {teamCount} teams (A–{lastLabel}), 2 players each. {matchCountForTeams(teamCount)} games, round robin on 2 courts.
+            Register {teamCount} teams (A–{lastLabel}), 2 players each. {matchCountForTeams(teamCount)} games, round robin on {courtCountForTeams(teamCount)} courts.
           </p>
 
           <div className="registration-teams-grid">

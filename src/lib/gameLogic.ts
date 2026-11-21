@@ -1,5 +1,5 @@
-export const TEAM_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
-export const TEAM_COUNTS = [6, 7, 8] as const;
+export const TEAM_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'] as const;
+export const TEAM_COUNTS = [6, 7, 8, 9] as const;
 export const NUM_TEAMS = 6;
 export const NUM_PLAYERS = 12;
 export const NUM_ROUNDS = 8;
@@ -86,12 +86,16 @@ export interface TeamRegistration {
 }
 
 export function isTeamCount(value: number): value is TeamCount {
-  return value === 6 || value === 7 || value === 8;
+  return (TEAM_COUNTS as readonly number[]).includes(value);
+}
+
+export function courtCountForTeams(teamCount: number): number {
+  return teamCount === 9 ? 3 : 2;
 }
 
 export function matchCountForTeams(teamCount: number): number {
   if (!isTeamCount(teamCount)) {
-    throw new Error('Tournament must have 6, 7, or 8 teams');
+    throw new Error('Tournament must have 6, 7, 8, or 9 teams');
   }
   return (teamCount * (teamCount - 1)) / 2;
 }
@@ -127,7 +131,7 @@ function circlePairings(teamCount: number): [number, number][][] {
   return rounds;
 }
 
-function packOntoTwoCourts(pairings: [number, number][][]): CourtMatchup[][] {
+function packOntoCourts(pairings: [number, number][][], courtCount: number): CourtMatchup[][] {
   let queue = pairings.flat();
   const rounds: CourtMatchup[][] = [];
 
@@ -138,7 +142,7 @@ function packOntoTwoCourts(pairings: [number, number][][]): CourtMatchup[][] {
 
     for (const pairing of queue) {
       const [teamA, teamB] = pairing;
-      if (round.length < 2 && !used.has(teamA) && !used.has(teamB)) {
+      if (round.length < courtCount && !used.has(teamA) && !used.has(teamB)) {
         round.push(pairing);
         used.add(teamA);
         used.add(teamB);
@@ -182,14 +186,15 @@ export const ROUND_MATCHUPS: CourtMatchup[][] = [
 
 export function buildRoundMatchups(teamCount: number): CourtMatchup[][] {
   if (!isTeamCount(teamCount)) {
-    throw new Error('Tournament must have 6, 7, or 8 teams');
+    throw new Error('Tournament must have 6, 7, 8, or 9 teams');
   }
   switch (teamCount) {
     case 6:
       return ROUND_MATCHUPS;
     case 7:
     case 8:
-      return packOntoTwoCourts(circlePairings(teamCount));
+    case 9:
+      return packOntoCourts(circlePairings(teamCount), courtCountForTeams(teamCount));
     default: {
       const unexpected: never = teamCount;
       return unexpected;
@@ -327,7 +332,7 @@ export function createTournament(
 
   const teamCount = teamRegistrations.length;
   if (!isTeamCount(teamCount)) {
-    throw new Error('Tournament must have 6, 7, or 8 teams');
+    throw new Error('Tournament must have 6, 7, 8, or 9 teams');
   }
 
   const matches: Match[] = [];
@@ -632,12 +637,13 @@ export function matchesConflictWithAny(match: Match, others: Match[]): boolean {
 }
 
 /**
- * Pick up to two incomplete matches for desktop spotlight.
+ * Pick up to maxSpotlight incomplete matches for desktop spotlight.
+ * Defaults to the tournament court count (2, or 3 for 9-team events).
  * Prefer no shared players; if none qualify after scanning the queue, fill with the next match anyway.
  */
 export function getDesktopSpotlightMatches(
   matches: Match[],
-  maxSpotlight = 2
+  maxSpotlight = Math.max(2, ...matches.map((match) => match.court || 1))
 ): { spotlight: Match[]; deferred: Match[] } {
   const incomplete = [...matches]
     .filter((m) => !m.completed)

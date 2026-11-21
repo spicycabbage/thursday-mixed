@@ -1329,6 +1329,14 @@ input[type="number"]::-webkit-inner-spin-button {
     align-items: start;
   }
 
+  .matches-spotlight-grid-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .matches-desktop-spotlight > .matches-spotlight-grid-3 {
+    width: min(100%, 82.8rem);
+  }
+
   .matches-spotlight-empty {
     border: 2px dashed #d1d5db;
     border-radius: 0.75rem;

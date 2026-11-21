@@ -5,6 +5,7 @@ import {
   Tournament,
   Team,
   getDesktopSpotlightMatches,
+  courtCountForTeams,
   getRankedTeams,
   isTournamentComplete,
 } from '@/lib/gameLogic';
@@ -49,9 +50,10 @@ export default function MatchesDesktopLayout({
     [sortedMatches]
   );
 
+  const courtCount = courtCountForTeams(tournament.teams.length);
   const { spotlight: spotlightMatches, deferred: deferredMatches } = useMemo(
-    () => getDesktopSpotlightMatches(sortedMatches),
-    [sortedMatches]
+    () => getDesktopSpotlightMatches(sortedMatches, courtCount),
+    [sortedMatches, courtCount]
   );
 
   const completedMatches = useMemo(
@@ -119,7 +121,7 @@ export default function MatchesDesktopLayout({
             {tournamentComplete && podium.length > 0 ? (
               <WinnerCelebrationSpotlight tournament={tournament} podium={podium} />
             ) : (
-              <div className="matches-spotlight-grid">
+              <div className={`matches-spotlight-grid${spotlightMatches.length >= 3 ? ' matches-spotlight-grid-3' : ''}`}>
                 {spotlightMatches.map((match) => (
                   <MatchCard
                     key={match.id}
