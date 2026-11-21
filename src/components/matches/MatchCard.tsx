@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Tournament, Match, validateScore, getTeamLabel, formatCourtLabel } from '@/lib/gameLogic';
+import { hasUnsavedScoreInput } from '@/lib/tournamentSync';
 
 export type MatchCardVariant = 'default' | 'spotlight' | 'mini';
 export type MatchCardLabelMode = 'round' | 'sequential';
@@ -18,6 +19,7 @@ interface MatchCardProps {
   roster?: boolean;
   initialEditing?: boolean;
   readOnly?: boolean;
+  onUnsavedScoreChange?: (matchId: number, unsaved: boolean) => void;
 }
 
 export default function MatchCard({
@@ -32,6 +34,7 @@ export default function MatchCard({
   roster = false,
   initialEditing = false,
   readOnly = false,
+  onUnsavedScoreChange,
 }: MatchCardProps) {
   const [scoreA, setScoreA] = useState(match.scoreA?.toString() || '');
   const [scoreB, setScoreB] = useState(match.scoreB?.toString() || '');
@@ -47,6 +50,27 @@ export default function MatchCard({
       setScoreB(match.scoreB?.toString() || '');
     }
   }, [match.scoreA, match.scoreB, isEditing]);
+
+  const unsaved = hasUnsavedScoreInput({
+    readOnly,
+    isLocked: tournament.isFinalized,
+    isEditing,
+    scoreA,
+    scoreB,
+    storedScoreA: match.scoreA,
+    storedScoreB: match.scoreB,
+  });
+  const onUnsavedScoreChangeRef = useRef(onUnsavedScoreChange);
+  onUnsavedScoreChangeRef.current = onUnsavedScoreChange;
+
+  useEffect(() => {
+    onUnsavedScoreChangeRef.current?.(match.id, unsaved);
+  }, [match.id, unsaved]);
+
+  useEffect(() => {
+    const matchId = match.id;
+    return () => onUnsavedScoreChangeRef.current?.(matchId, false);
+  }, [match.id]);
 
   const getPlayerName = useCallback(
     (playerId: number) => tournament.players.find((p) => p.id === playerId)?.name || `P${playerId}`,

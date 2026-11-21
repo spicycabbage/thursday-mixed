@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Tournament, updateMatchScore, requeueMatch, isTournamentComplete, getTournamentRoundCount, getTeamLabel } from '@/lib/gameLogic';
 import { subscribeLiveTournament } from '@/lib/liveUpdates';
 import { readCachedTournament, writeCachedTournament } from '@/lib/tournamentCache';
+import { canApplyRemoteTournament, TOURNAMENT_REFRESH_MS } from '@/lib/tournamentSync';
 import { PageLoading, PageShell } from '@/components/PageShell';
 import TournamentHeader from '@/components/TournamentHeader';
 import PlayersTab from '@/components/PlayersTab';
@@ -52,10 +53,71 @@ export default function TournamentScreen({
     getTabletLayoutServerSnapshot,
   );
   const latestTournamentRef = useRef<Tournament | null>(null);
+  const pendingWritesRef = useRef(0);
+  const unsavedScoreIdsRef = useRef(new Set<number>());
+  const refreshFromServerRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     latestTournamentRef.current = tournament;
   }, [tournament]);
+
+  const applyRemoteTournament = (serverTournament: Tournament) => {
+    if (!canApplyRemoteTournament(pendingWritesRef.current, unsavedScoreIdsRef.current.size)) {
+      return;
+    }
+    try { localStorage.setItem('currentTournament', JSON.stringify(serverTournament)); } catch {}
+    writeCachedTournament(serverTournament);
+    setTournament(serverTournament);
+  };
+
+  refreshFromServerRef.current = async () => {
+    try {
+      const res = await fetch(`/api/tournaments/${id}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const remote = (await res.json()) as Tournament | null;
+      if (remote) applyRemoteTournament(remote);
+    } catch {}
+  };
+
+  const beginWrite = () => {
+    pendingWritesRef.current += 1;
+  };
+
+  const endWrite = () => {
+    pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
+    if (canApplyRemoteTournament(pendingWritesRef.current, unsavedScoreIdsRef.current.size)) {
+      void refreshFromServerRef.current();
+    }
+  };
+
+  const handleUnsavedScoreChange = (matchId: number, unsaved: boolean) => {
+    const ids = unsavedScoreIdsRef.current;
+    const wasIdle = canApplyRemoteTournament(pendingWritesRef.current, ids.size);
+    if (unsaved) ids.add(matchId);
+    else ids.delete(matchId);
+    const isIdle = canApplyRemoteTournament(pendingWritesRef.current, ids.size);
+    if (!wasIdle && isIdle) void refreshFromServerRef.current();
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (!cancelled) void refreshFromServerRef.current();
+    };
+    const interval = window.setInterval(tick, TOURNAMENT_REFRESH_MS);
+    const onFocus = () => tick();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [id]);
 
   useEffect(() => {
     let ignore = false;
@@ -115,8 +177,7 @@ export default function TournamentScreen({
       if (parsedTournament) {
         unsubscribe = subscribeLiveTournament(parsedTournament.id, {
           onSync: (serverTournament) => {
-            localStorage.setItem('currentTournament', JSON.stringify(serverTournament));
-            setTournament(serverTournament);
+            applyRemoteTournament(serverTournament);
           },
           onToast: (payload) => {
             const { round, scoreA, scoreB, matchId } = payload;
@@ -153,6 +214,7 @@ export default function TournamentScreen({
     if (!tournament || !tabletLayout) return;
 
     if (tournament.isFinalized) return; // guard: no updates after finalize
+    beginWrite();
     const updatedTournament = updateMatchScore(tournament, matchId, scoreA, scoreB, isEdit);
     
     // CRITICAL: Save to localStorage FIRST before any UI updates
@@ -178,6 +240,8 @@ export default function TournamentScreen({
       }
     } catch (error) {
       console.error('Failed to save score to database:', error);
+    } finally {
+      endWrite();
     }
 
     // Only auto-advance if this is NOT an edit and we're on the matches tab
@@ -221,6 +285,7 @@ export default function TournamentScreen({
     const updatedTournament = requeueMatch(tournament, matchId);
     if (updatedTournament === tournament) return;
 
+    beginWrite();
     localStorage.setItem('currentTournament', JSON.stringify(updatedTournament));
     setTournament(updatedTournament);
 
@@ -244,11 +309,14 @@ export default function TournamentScreen({
       setTournament(previous);
       localStorage.setItem('currentTournament', JSON.stringify(previous));
       alert('Could not requeue the match.');
+    } finally {
+      endWrite();
     }
   };
 
   const handleTeamUpdate = async (teams: { player1: string; player2: string }[]) => {
     if (!tournament) return;
+    beginWrite();
     try {
       const res = await fetch(`/api/tournaments/${tournament.id}/players`, {
         method: 'POST',
@@ -267,12 +335,15 @@ export default function TournamentScreen({
     } catch (e) {
       console.error('Error updating players:', e);
       alert('Failed to update players. Please try again.');
+    } finally {
+      endWrite();
     }
   };
 
   const handleFinalizeTournament = async () => {
     if (!tournament) return;
 
+    beginWrite();
     try {
       // Persist to Neon so Home active-state reflects immediately
       const res = await fetch(`/api/tournaments/${tournament.id}/finalize`, { method: 'POST' });
@@ -290,23 +361,30 @@ export default function TournamentScreen({
       const history = JSON.parse(localStorage.getItem('tournamentHistory') || '[]');
       history.push(updated);
       localStorage.setItem('tournamentHistory', JSON.stringify(history));
-    } catch {}
+    } catch {} finally {
+      endWrite();
+    }
   };
 
   const handleSaveCourtNumbers = async (courtNumbers: number[]) => {
     if (!tournament) return;
-    const res = await fetch(`/api/tournaments/${tournament.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ courtNumbers }),
-    });
-    if (!res.ok) {
-      const error = await res.json().catch(() => null);
-      throw new Error(error?.error || 'Could not update court numbers.');
+    beginWrite();
+    try {
+      const res = await fetch(`/api/tournaments/${tournament.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courtNumbers }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        throw new Error(error?.error || 'Could not update court numbers.');
+      }
+      const updated = await res.json();
+      setTournament(updated);
+      try { localStorage.setItem('currentTournament', JSON.stringify(updated)); } catch {}
+    } finally {
+      endWrite();
     }
-    const updated = await res.json();
-    setTournament(updated);
-    try { localStorage.setItem('currentTournament', JSON.stringify(updated)); } catch {}
   };
 
   if (loading || tabletLayout === null) {
@@ -388,6 +466,7 @@ export default function TournamentScreen({
                 onFinalize={handleFinalizeTournament}
                 canEditCourts={isAdmin}
                 onSaveCourtNumbers={handleSaveCourtNumbers}
+                onUnsavedScoreChange={handleUnsavedScoreChange}
               />
             </div>
 

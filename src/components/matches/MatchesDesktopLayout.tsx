@@ -21,6 +21,7 @@ interface MatchesDesktopLayoutProps {
   onFinalize?: () => void;
   canEditCourts?: boolean;
   onSaveCourtNumbers?: (courtNumbers: number[]) => Promise<void> | void;
+  onUnsavedScoreChange?: (matchId: number, unsaved: boolean) => void;
 }
 
 export default function MatchesDesktopLayout({
@@ -30,6 +31,7 @@ export default function MatchesDesktopLayout({
   onFinalize,
   canEditCourts,
   onSaveCourtNumbers,
+  onUnsavedScoreChange,
 }: MatchesDesktopLayoutProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [modalMatchId, setModalMatchId] = useState<number | null>(null);
@@ -128,6 +130,7 @@ export default function MatchesDesktopLayout({
               <div className={`matches-spotlight-grid${spotlightMatches.length >= 3 ? ' matches-spotlight-grid-3' : ''}`}>
                 {spotlightMatches.map((match) => (
                   <MatchCard
+                    onUnsavedScoreChange={onUnsavedScoreChange}
                     key={match.id}
                     match={match}
                     tournament={tournament}
@@ -154,6 +157,7 @@ export default function MatchesDesktopLayout({
                 {deferredMatches.map((match) => (
                   <div key={match.id} data-match-id={match.id} className="match-mini-wrap">
                     <MatchCard
+                    onUnsavedScoreChange={onUnsavedScoreChange}
                       match={match}
                       tournament={tournament}
                       onScoreUpdate={onScoreUpdate}
@@ -177,6 +181,7 @@ export default function MatchesDesktopLayout({
                 {completedMatches.map((match) => (
                   <div key={match.id} data-match-id={match.id} className="match-mini-wrap">
                     <MatchCard
+                    onUnsavedScoreChange={onUnsavedScoreChange}
                       match={match}
                       tournament={tournament}
                       onScoreUpdate={onScoreUpdate}
@@ -238,6 +243,7 @@ export default function MatchesDesktopLayout({
             </div>
             <div className="match-edit-modal-body">
               <MatchCard
+                    onUnsavedScoreChange={onUnsavedScoreChange}
                 match={modalMatch}
                 tournament={tournament}
                 onScoreUpdate={handleModalScoreUpdate}
