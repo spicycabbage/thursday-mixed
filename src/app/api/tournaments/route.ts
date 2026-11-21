@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ADMIN_COOKIE, adminSecret, hasAdminCookie } from '@/lib/adminAuth';
 import { ensureSchema, ensureTournamentMeta, sql } from '@/lib/db';
-import { createTournament, duplicateNameKeys, EVENT_TYPE_LABELS, isEventType, isTeamCount, nameKey, normalizeCourtNumbers, normalizeName } from '@/lib/gameLogic';
+import { createTournament, duplicateNameKeys, EVENT_TYPE_LABELS, isEventType, isTeamCount, nameKey, normalizeCourtNumbers, normalizeName, toPgIntArray } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: NextRequest) {
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     });
 
     await sql`insert into tournaments (id, access_code, name, event_type, date, current_round, is_finalized, court_numbers)
-      values (${t.id}, ${''}, ${t.name}, ${t.eventType}, ${t.date}, ${t.currentRound}, ${t.isFinalized}, ${courtNumbers})`;
+      values (${t.id}, ${''}, ${t.name}, ${t.eventType}, ${t.date}, ${t.currentRound}, ${t.isFinalized}, ${toPgIntArray(courtNumbers)}::int[])`;
 
     for (const p of t.players) {
       await sql`insert into players (tournament_id, id, name, team_id, total_score)

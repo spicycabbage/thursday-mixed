@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ADMIN_COOKIE, adminSecret, hasAdminCookie } from '@/lib/adminAuth';
 import { sql } from '@/lib/db';
 import { assembleTournament, persistMatchCourts } from '@/lib/tournamentRepo';
-import { normalizeCourtNumbers, relabelCourtNumbers } from '@/lib/gameLogic';
+import { normalizeCourtNumbers, relabelCourtNumbers, toPgIntArray } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     relabelCourtNumbers(tournament, courtNumbers);
-    await sql`update tournaments set court_numbers = ${courtNumbers} where id = ${id}`;
+    await sql`update tournaments set court_numbers = ${toPgIntArray(courtNumbers)}::int[] where id = ${id}`;
     await persistMatchCourts(id, tournament.matches);
 
     const updated = await assembleTournament(id);

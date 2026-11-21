@@ -115,6 +115,14 @@ export function normalizeCourtNumbers(input: unknown, teamCount: number): number
   return nums;
 }
 
+/** Postgres int[] literal. The sql client has fetch_types off, so a JS array is sent as "1,2,3" and Postgres rejects it as a malformed array. */
+export function toPgIntArray(values: number[]): string {
+  if (!Array.isArray(values) || values.length === 0 || values.some((value) => !Number.isInteger(value))) {
+    throw new Error('Invalid integer array');
+  }
+  return `{${values.join(',')}}`;
+}
+
 export function getCourtNumbers(tournament: {
   teams: { length: number };
   courtNumbers?: number[] | null;

@@ -21,6 +21,7 @@ import {
   formatCourtLabel,
   normalizeCourtNumbers,
   relabelCourtNumbers,
+  toPgIntArray,
 } from '../gameLogic';
 
 const sampleTeams = [
@@ -339,6 +340,9 @@ describe('Game Logic', () => {
       expect(defaultCourtNumbers(9)).toEqual([1, 2, 3]);
       expect(normalizeCourtNumbers([11, 12], 6)).toEqual([11, 12]);
       expect(normalizeCourtNumbers([11, 11], 6)).toBeNull();
+      expect(toPgIntArray([10, 2, 3])).toBe('{10,2,3}');
+      expect(toPgIntArray([1, 2])).toBe('{1,2}');
+      expect(() => toPgIntArray([])).toThrow();
       expect(formatCourtLabel(0)).toBeNull();
       expect(formatCourtLabel(11)).toBe('Court 11');
       expect(formatCourtLabel(11, true)).toBe('Ct 11');
