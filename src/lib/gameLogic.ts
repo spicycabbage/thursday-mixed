@@ -716,6 +716,16 @@ function nextFinishOrder(matches: Match[], matchId: number): number {
 
 const NEVER_REST = 1000;
 const MAX_RUN = 2;
+const SIX_TEAM_MAX_RUN = 3;
+
+function maxRunFor(matches: Match[]): number {
+  const teams = new Set<number>();
+  for (const match of matches) {
+    teams.add(match.teamAId);
+    teams.add(match.teamBId);
+  }
+  return teams.size === 6 ? SIX_TEAM_MAX_RUN : MAX_RUN;
+}
 
 function isRequeued(match: Match): boolean {
   return (match.queueOrder ?? 0) > 0 && match.queueOrder !== match.id;
@@ -941,9 +951,10 @@ export function matchesConflictWithAny(match: Match, others: Match[]): boolean {
  * Pick up to maxSpotlight incomplete matches for the courts in use.
  * Matches already on a court stay there. An open court goes to a match that
  * shares no players with whoever is still playing. Among those, take the team
- * that has had the longest break. A third game in a row waits until another
- * court finishes, and only goes out when no court is playing. A clashing match
- * is never sent out.
+ * that has had the longest break. With 7 or more teams, a third game in a row
+ * waits until another court finishes, and only goes out when no court is playing.
+ * With 6 teams a third is allowed, and a fourth waits the same way. A clashing
+ * match is never sent out.
  */
 export function getDesktopSpotlightMatches(
   matches: Match[],
@@ -964,11 +975,12 @@ export function getDesktopSpotlightMatches(
   }
 
   const seated = new Set(spotlight.map((match) => match.id));
+  const maxRun = maxRunFor(matches);
   while (spotlight.length < maxSpotlight) {
     const waiting = incomplete.filter((match) => !seated.has(match.id));
     if (waiting.length === 0) break;
     const clean = waiting.filter((match) => !matchesConflictWithAny(match, spotlight));
-    const safe = clean.filter((match) => [match.teamAId, match.teamBId].every((teamId) => nextRun(matches, teamId) <= MAX_RUN));
+    const safe = clean.filter((match) => [match.teamAId, match.teamBId].every((teamId) => nextRun(matches, teamId) <= maxRun));
     const pool = safe.length > 0 ? safe : spotlight.length === 0 ? clean : [];
     if (pool.length === 0) break;
     const pick = pickNextMatch(pool, matches);
@@ -988,7 +1000,8 @@ export function getDesktopSpotlightMatches(
 
 export type QueuePlace =
   | { kind: 'confirmed'; offset: number }
-  | { kind: 'tentative'; reason: 'on-court' | 'streak' | 'overlap' | 'later' | 'requeued' };
+  | { kind: 'tentative'; reason: 'on-court' | 'overlap' | 'later' | 'requeued' }
+  | { kind: 'tentative'; reason: 'streak'; gamesInARow: number };
 
 export interface QueueCard {
   match: Match;
@@ -1012,8 +1025,10 @@ export function queuePlaceExplanation(place: QueuePlace): string {
   switch (place.reason) {
     case 'on-court':
       return 'Someone in this match is still playing. It cannot be called until that game ends, and by then the line can be re-sorted by who has waited longer and who has played more.';
-    case 'streak':
-      return 'One of these teams would be playing a third game in a row, so they wait. A team that has had a longer break can be called ahead of them.';
+    case 'streak': {
+      const which = place.gamesInARow === 3 ? 'a third' : place.gamesInARow === 4 ? 'a fourth' : `a ${place.gamesInARow}th`;
+      return `One of these teams would be playing ${which} game in a row, so they wait. A team that has had a longer break can be called ahead of them.`;
+    }
     case 'overlap':
       return 'This match shares a player with a confirmed match ahead of it, so it waits. The rest of the line can still be re-sorted by wait time and how busy each team is.';
     case 'requeued':
@@ -1021,7 +1036,7 @@ export function queuePlaceExplanation(place: QueuePlace): string {
     case 'later':
       return 'This match is past the locked spots. When a court opens, the line can be re-sorted. A team that has waited longer, or played fewer games, can move ahead.';
     default: {
-      const unreachable: never = place.reason;
+      const unreachable: never = place;
       return unreachable;
     }
   }
@@ -1033,6 +1048,7 @@ export function queuePlaceExplanation(place: QueuePlace): string {
  */
 export function buildQueueCards(matches: Match[], deferred: Match[], courtCount: number): QueueCard[] {
   const playing = matches.filter((match) => !match.completed && match.court > 0);
+  const maxRun = maxRunFor(matches);
   const limit = Math.max(courtCount, 1);
   const normalWaiting = deferred.some((match) => !isRequeued(match));
   const confirmed: QueueCard[] = [];
@@ -1056,9 +1072,9 @@ export function buildQueueCards(matches: Match[], deferred: Match[], courtCount:
       tentative.push({ match, place: { kind: 'tentative', reason: 'overlap' } });
       continue;
     }
-    const streak = [match.teamAId, match.teamBId].some((teamId) => nextRun(matches, teamId) > MAX_RUN);
-    if (streak) {
-      tentative.push({ match, place: { kind: 'tentative', reason: 'streak' } });
+    const incoming = Math.max(nextRun(matches, match.teamAId), nextRun(matches, match.teamBId));
+    if (incoming > maxRun) {
+      tentative.push({ match, place: { kind: 'tentative', reason: 'streak', gamesInARow: incoming } });
       continue;
     }
     confirmedMatches.push(match);
