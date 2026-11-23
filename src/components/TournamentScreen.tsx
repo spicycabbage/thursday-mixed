@@ -478,8 +478,6 @@ export default function TournamentScreen({
           onTabChange={setActiveTab}
           onEditPlayers={() => setShowPlayersModal(true)}
           editPlayersTitle={playersEditTitle}
-          onStart={!tournament.startedAt && !tournament.isFinalized ? handleStartTournament : undefined}
-          startDisabled={starting}
         />
 
         <div className="tournament-tab-scroll">
@@ -508,6 +506,8 @@ export default function TournamentScreen({
                 onRequeue={handleRequeue}
                 onFinalize={handleFinalizeTournament}
                 onUnsavedScoreChange={handleUnsavedScoreChange}
+                onStart={!tournament.startedAt && !tournament.isFinalized ? handleStartTournament : undefined}
+                startDisabled={starting}
               />
             </div>
 

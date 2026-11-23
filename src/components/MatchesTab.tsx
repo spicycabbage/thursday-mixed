@@ -13,9 +13,11 @@ interface MatchesTabProps {
   onRequeue?: (matchId: number) => void;
   onFinalize?: () => void;
   onUnsavedScoreChange?: (matchId: number, unsaved: boolean) => void;
+  onStart?: () => void;
+  startDisabled?: boolean;
 }
 
-export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFinalize, onUnsavedScoreChange }: MatchesTabProps) {
+export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFinalize, onUnsavedScoreChange, onStart, startDisabled }: MatchesTabProps) {
   const [selectedRound, setSelectedRound] = useState(tournament.currentRound);
   const [autoFollow, setAutoFollow] = useState(true);
 
@@ -104,6 +106,8 @@ export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFin
         onRequeue={onRequeue}
         onFinalize={onFinalize}
         onUnsavedScoreChange={onUnsavedScoreChange}
+        onStart={onStart}
+        startDisabled={startDisabled}
       />
     </div>
   );

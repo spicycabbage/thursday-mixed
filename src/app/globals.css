@@ -311,6 +311,27 @@
   color: #e5e7eb;
 }
 
+.results-playing-time-btn {
+  display: block;
+  width: 100%;
+  margin-top: 1rem;
+  min-height: 2.75rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+}
+
+.results-playing-time-btn:hover {
+  background: #1e40af;
+}
+
 .results-standing-row {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr) 2.5rem 2.75rem;
@@ -1320,12 +1341,29 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 
   .matches-playing-now {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
     background: #60a5fa;
     padding: 0.75rem 1rem 1rem;
+  }
+
+  .playing-now-start {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  .playing-now-start .tournament-start-btn {
+    font-size: 1.75rem;
+    padding: 1rem 3rem;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   }
 
   .matches-desktop-header {

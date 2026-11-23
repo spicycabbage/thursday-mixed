@@ -11,8 +11,6 @@ interface TournamentHeaderProps {
   onEditPlayers?: () => void;
   editPlayersDisabled?: boolean;
   editPlayersTitle?: string;
-  onStart?: () => void;
-  startDisabled?: boolean;
 }
 
 export default function TournamentHeader({
@@ -24,8 +22,6 @@ export default function TournamentHeader({
   onEditPlayers,
   editPlayersDisabled = false,
   editPlayersTitle = 'Edit players',
-  onStart,
-  startDisabled = false,
 }: TournamentHeaderProps) {
   const formatDate = (dateString: string) => {
     const [y, m, d] = dateString.split('-').map(Number);
@@ -59,16 +55,6 @@ export default function TournamentHeader({
               {formatDate(date)}
             </div>
             <div className="tournament-header-actions">
-              {onStart && (
-                <button
-                  type="button"
-                  onClick={onStart}
-                  disabled={startDisabled}
-                  className="tournament-start-btn"
-                >
-                  Start
-                </button>
-              )}
               {onEditPlayers && (
                 <button
                   type="button"

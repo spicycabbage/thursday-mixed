@@ -25,6 +25,8 @@ interface MatchesDesktopLayoutProps {
   onRequeue?: (matchId: number) => void;
   onFinalize?: () => void;
   onUnsavedScoreChange?: (matchId: number, unsaved: boolean) => void;
+  onStart?: () => void;
+  startDisabled?: boolean;
 }
 
 export default function MatchesDesktopLayout({
@@ -33,6 +35,8 @@ export default function MatchesDesktopLayout({
   onRequeue,
   onFinalize,
   onUnsavedScoreChange,
+  onStart,
+  startDisabled = false,
 }: MatchesDesktopLayoutProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [modalMatchId, setModalMatchId] = useState<number | null>(null);
@@ -130,6 +134,13 @@ export default function MatchesDesktopLayout({
     <div className="matches-desktop-layout">
       <div className="matches-desktop-main">
         <div className="matches-playing-now">
+          {onStart && (
+            <div className="playing-now-start">
+              <button type="button" className="tournament-start-btn" onClick={onStart} disabled={startDisabled}>
+                {startDisabled ? 'Starting...' : 'Start'}
+              </button>
+            </div>
+          )}
           <div className="matches-desktop-header">
             <h3 className="text-lg font-bold text-gray-900">Playing Now</h3>
             <span className="tab-meta">{progressLabel}</span>

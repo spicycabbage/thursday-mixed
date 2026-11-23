@@ -374,7 +374,7 @@ describe('Game Logic', () => {
       expect(played.matches.find((match) => match.id === 8)?.court).toBe(11);
     });
 
-    it('keeps runs to 3 and will not clash when a clean match exists', () => {
+    it('keeps runs to 2 and will not clash when a clean match exists', () => {
       const extras = [
         { player1: 'Gina', player2: 'Grace' },
         { player1: 'Hank', player2: 'Holly' },
@@ -399,7 +399,7 @@ describe('Game Logic', () => {
         }
         expect(isTournamentComplete(next)).toBe(true);
         const longest = Math.max(...next.matches.flatMap((match) => [match.streakA ?? 1, match.streakB ?? 1]));
-        expect(longest).toBeLessThanOrEqual(3);
+        expect(longest).toBeLessThanOrEqual(2);
       }
     });
 

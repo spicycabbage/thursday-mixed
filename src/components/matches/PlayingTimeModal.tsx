@@ -10,7 +10,6 @@ import {
   formatAxisClock,
   formatClock,
   formatMatchWindow,
-  teamColor,
   timelineAxis,
   type CourtTimeline,
   type TeamTimeRow,
@@ -56,7 +55,9 @@ export default function PlayingTimeModal({ tournament, onClose }: PlayingTimeMod
             <h3 id="playing-time-title" className="playing-time-title">
               Playing Time
             </h3>
-            <p className="playing-time-subtitle">Black bars are breaks between games. Letters show the opponent.</p>
+            {timeline || !tournament.isFinalized ? (
+              <p className="playing-time-subtitle">Black bars are breaks between games. Letters show the opponent.</p>
+            ) : null}
           </div>
           <button type="button" className="playing-time-close" onClick={onClose} aria-label="Close">
             ×
@@ -74,7 +75,11 @@ export default function PlayingTimeModal({ tournament, onClose }: PlayingTimeMod
         )}
         <div className="playing-time-body">
           {!timeline ? (
-            <p className="playing-time-empty">Hit Start to begin the clock. Matches land on the chart as they go on court.</p>
+            <p className="playing-time-empty">
+              {tournament.isFinalized
+                ? 'Playing Time data were not kept for this tournament.'
+                : 'Hit Start to begin the clock. Matches land on the chart as they go on court.'}
+            </p>
           ) : (
             <TeamChart timeline={timeline} rows={teamRows} />
           )}
@@ -207,7 +212,7 @@ function TeamChart({ timeline, rows }: { timeline: CourtTimeline; rows: TeamTime
               >
                 {row.names}
               </text>
-              <rect x={plotX} y={y} width={plotW} height={laneH} rx={laneH / 2} className="playing-time-lane" />
+              <rect x={plotX} y={y} width={plotW} height={laneH} rx={3} className="playing-time-lane" />
               <rect
                 x={totalX + 6}
                 y={y}
@@ -236,10 +241,12 @@ function TeamChart({ timeline, rows }: { timeline: CourtTimeline; rows: TeamTime
         ))}
 
         {rows.map((row, rowIndex) =>
-          row.segments.map((segment, index) => {
+          row.segments.map((segment, index, segments) => {
             const y = laneTop(rowIndex);
             const x = xOf(segment.startMs);
-            const w = Math.max(xOf(segment.endMs) - x, 2);
+            const next = segments[index + 1];
+            const endX = next ? xOf(next.startMs) : xOf(segment.endMs);
+            const w = Math.max(endX - x, 1);
             const play = segment.kind === 'play';
             const seconds = !play && !segment.counted ? 0 : breakSeconds(segment.startMs, segment.endMs);
             const windowLabel = play
@@ -250,7 +257,7 @@ function TeamChart({ timeline, rows }: { timeline: CourtTimeline; rows: TeamTime
             const versus = play && segment.opponent ? ` vs ${segment.opponent}` : '';
             const label = play ? segment.opponent : `${seconds}s`;
             const showLabel = !!label && w >= (play ? 16 : 30);
-            const fill = play ? teamColor(row.teamId) : segment.counted ? BREAK_COLOR : '#cbd5e1';
+            const fill = play ? '#60a5fa' : segment.counted ? BREAK_COLOR : '#cbd5e1';
             const textClass = play
               ? 'playing-time-bar-label'
               : segment.counted
@@ -259,11 +266,10 @@ function TeamChart({ timeline, rows }: { timeline: CourtTimeline; rows: TeamTime
             return (
               <g key={`${row.teamId}-${index}`}>
                 <rect
-                  x={x + 1}
-                  y={y + 2}
-                  width={Math.max(w - 2, 1)}
-                  height={laneH - 4}
-                  rx={Math.min(8, (laneH - 4) / 2)}
+                  x={x}
+                  y={y}
+                  width={w}
+                  height={laneH}
                   fill={fill}
                   className={play && segment.live ? 'playing-time-live' : undefined}
                 />

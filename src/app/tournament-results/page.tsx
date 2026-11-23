@@ -3,6 +3,7 @@
 import { useState, useLayoutEffect } from 'react';
 import { TrophyIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageShell } from '@/components/PageShell';
+import PlayingTimeModal from '@/components/matches/PlayingTimeModal';
 import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
 import { EVENT_TYPES, EVENT_TYPE_LABELS, Tournament, eventTypeOf, formatSideNames, getRankedTeams, isSinglesEvent, type EventType, type Team } from '@/lib/gameLogic';
 
@@ -197,6 +198,7 @@ function teamNames(tournament: Tournament, team: Team) {
 
 function TournamentResultCard({ tournament, formatDate }: TournamentResultCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [showPlayingTime, setShowPlayingTime] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const rankedTeams = getRankedTeams(tournament);
   const podium = rankedTeams.slice(0, 3);
@@ -276,7 +278,13 @@ function TournamentResultCard({ tournament, formatDate }: TournamentResultCardPr
               </div>
             ))}
           </div>
+          <button type="button" className="results-playing-time-btn" onClick={() => setShowPlayingTime(true)}>
+            Playing Time
+          </button>
         </div>
+      )}
+      {showPlayingTime && (
+        <PlayingTimeModal tournament={tournament} onClose={() => setShowPlayingTime(false)} />
       )}
       <TeamSummaryModal
         tournament={tournament}
