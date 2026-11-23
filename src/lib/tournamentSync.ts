@@ -1,4 +1,6 @@
 export const TOURNAMENT_REFRESH_MS = 4000;
+/** Safety-net poll interval while the realtime channel is delivering updates. */
+export const TOURNAMENT_LIVE_REFRESH_MS = 30000;
 
 export function canApplyRemoteTournament(pendingWrites: number, unsavedScoreCount: number): boolean {
   return pendingWrites <= 0 && unsavedScoreCount <= 0;

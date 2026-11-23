@@ -14,8 +14,15 @@ import {
   courtCountForTeams,
   getWinnerTeam,
   getDesktopSpotlightMatches,
+  orderPlayingNow,
+  buildQueueCards,
+  queuePlaceLabel,
+  type Match,
+  getMatchPlayerIds,
   matchesShareParticipants,
+  matchesConflictWithAny,
   requeueMatch,
+  startTournament,
   UNASSIGNED_COURT,
   defaultCourtNumbers,
   formatCourtLabel,
@@ -42,6 +49,35 @@ describe('Game Logic', () => {
       expect(tournament.players).toHaveLength(12);
       expect(tournament.matches).toHaveLength(NUM_MATCHES);
       expect(tournament.currentRound).toBe(1);
+    });
+
+    it('creates one player per side for singles and does not share a phantom partner', () => {
+      const regs = ['Ann', 'Ben', 'Cara', 'Dan', 'Eve', 'Finn'].map((name) => ({
+        player1: name,
+        player2: '',
+      }));
+      const tournament = createTournament(regs, '2026-11-22', { eventType: 'MS' });
+
+      expect(tournament.eventType).toBe('MS');
+      expect(tournament.players).toHaveLength(6);
+      expect(tournament.teams.every((team) => team.player2Id === 0)).toBe(true);
+      expect(tournament.matches[0].teamA.player2).toBe(0);
+      expect(getMatchPlayerIds(tournament.matches[0])).toEqual([
+        tournament.matches[0].teamA.player1,
+        tournament.matches[0].teamB.player1,
+      ]);
+      expect(matchesShareParticipants(tournament.matches[0], tournament.matches[1])).toBe(false);
+
+      const scored = updateMatchScore(
+        tournament,
+        tournament.matches[0].id,
+        21,
+        15
+      );
+      const ranked = getRankedPlayers(scored);
+      expect(ranked).toHaveLength(6);
+      expect(ranked.filter((player) => player.wins === 1)).toHaveLength(1);
+      expect(ranked.filter((player) => player.losses === 1)).toHaveLength(1);
     });
 
     it('should initialize all stats to 0', () => {
@@ -303,15 +339,68 @@ describe('Game Logic', () => {
       expect(after.spotlight.map((m) => m.id)).toContain(4);
     });
 
-    it('should fill spotlight with conflicting matches when no clean second match exists', () => {
+    it('leaves a court empty instead of pairing teams that share players', () => {
       const tournament = createTournament(sampleTeams);
       const blockedQueue = tournament.matches.filter((m) => [1, 4, 6, 9].includes(m.id));
       const { spotlight } = getDesktopSpotlightMatches(blockedQueue);
 
-      expect(spotlight).toHaveLength(2);
+      expect(spotlight).toHaveLength(1);
       expect(spotlight[0].id).toBe(1);
-      expect(spotlight[1].id).toBe(4);
-      expect(matchesShareParticipants(spotlight[0], spotlight[1])).toBe(true);
+      expect(blockedQueue.filter((match) => match.id !== 1).every((match) => matchesShareParticipants(spotlight[0], match))).toBe(true);
+    });
+
+    it('keeps a match on its court when a requeued match is waiting or comes up', () => {
+      const tournament = createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] });
+      for (const match of tournament.matches) {
+        const onCourt = match.id === 1 || match.id === 4;
+        match.completed = !onCourt;
+        match.scoreA = match.completed ? 21 : null;
+        match.scoreB = match.completed ? 15 : null;
+        match.court = match.id === 1 ? 11 : match.id === 4 ? 12 : UNASSIGNED_COURT;
+        match.winnerTeam = match.completed ? 'A' : null;
+      }
+
+      const synced = requeueMatch(tournament, 8);
+      const stillOn11 = synced.matches.find((match) => match.id === 1)!;
+      const stillOn12 = synced.matches.find((match) => match.id === 4)!;
+      const waiting = synced.matches.find((match) => match.id === 8)!;
+      expect(stillOn11.court).toBe(11);
+      expect(stillOn12.court).toBe(12);
+      expect(waiting.court).toBe(UNASSIGNED_COURT);
+      expect(getDesktopSpotlightMatches(synced.matches, 2).spotlight.map((match) => match.id)).toEqual([1, 4]);
+
+      const played = updateMatchScore(synced, 1, 21, 15);
+      expect(played.matches.find((match) => match.id === 4)?.court).toBe(12);
+      expect(played.matches.find((match) => match.id === 8)?.court).toBe(11);
+    });
+
+    it('keeps runs to 3 and will not clash when a clean match exists', () => {
+      const extras = [
+        { player1: 'Gina', player2: 'Grace' },
+        { player1: 'Hank', player2: 'Holly' },
+        { player1: 'Ivy', player2: 'Iris' },
+      ];
+      for (const count of [6, 7, 8, 9]) {
+        const regs = [...sampleTeams, ...extras.slice(0, count - 6)];
+        let next = createTournament(regs);
+        const courts = courtCountForTeams(count);
+        let guard = 0;
+        while (!isTournamentComplete(next) && guard++ < 80) {
+          const { spotlight } = getDesktopSpotlightMatches(next.matches, courts);
+          expect(spotlight.length).toBeGreaterThan(0);
+          const cleanAlternative = next.matches.filter((match) => (
+            !match.completed
+            && !spotlight.some((seated) => seated.id === match.id)
+            && !matchesConflictWithAny(match, spotlight)
+          ));
+          const clashing = spotlight.some((match, index) => spotlight.some((other, otherIndex) => otherIndex > index && matchesShareParticipants(match, other)));
+          if (clashing) expect(cleanAlternative).toHaveLength(0);
+          next = updateMatchScore(next, spotlight[0].id, 21, 15);
+        }
+        expect(isTournamentComplete(next)).toBe(true);
+        const longest = Math.max(...next.matches.flatMap((match) => [match.streakA ?? 1, match.streakB ?? 1]));
+        expect(longest).toBeLessThanOrEqual(3);
+      }
     });
 
     it('puts a requeued match at the end of the queue and clears its score', () => {
@@ -378,6 +467,136 @@ describe('Game Logic', () => {
       const playing = getDesktopSpotlightMatches(relabeled.matches, 2).spotlight;
       expect(playing.map((match) => match.court).sort((a, b) => a - b)).toEqual([21, 22]);
       expect(relabeled.matches.filter((match) => match.court === 11 || match.court === 12)).toHaveLength(0);
+    });
+  });
+
+  describe('match clock', () => {
+    it('puts the newest on-court match on the right even when its number is smaller', () => {
+      const playing = orderPlayingNow([
+        { id: 2, startedAt: '2026-11-23T09:40:00.000Z' },
+        { id: 8, startedAt: '2026-11-23T09:25:00.000Z' },
+        { id: 5, startedAt: '2026-11-23T09:25:00.000Z' },
+      ] as Match[]);
+      expect(playing.map((match) => match.id)).toEqual([5, 8, 2]);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('starts every match already on a court', () => {
+      const tournament = createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] });
+      const started = startTournament(tournament, '2026-11-23T18:00:00.000Z');
+      const playing = started.matches.filter((match) => !match.completed && match.court > 0);
+      expect(started.startedAt).toBe('2026-11-23T18:00:00.000Z');
+      expect(playing.length).toBeGreaterThan(0);
+      expect(playing.every((match) => match.startedAt === '2026-11-23T18:00:00.000Z')).toBe(true);
+      expect(started.matches.filter((match) => match.court <= 0).every((match) => !match.startedAt)).toBe(true);
+    });
+
+    it('does not stamp times before Start', () => {
+      const tournament = createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] });
+      const first = tournament.matches.find((match) => match.court === 11)!;
+      const next = updateMatchScore(tournament, first.id, 21, 15);
+      const finished = next.matches.find((match) => match.id === first.id)!;
+      expect(finished.startedAt).toBeUndefined();
+      expect(finished.endedAt).toBeUndefined();
+      expect(next.matches.filter((match) => !match.completed && match.court > 0).every((match) => !match.startedAt)).toBe(true);
+    });
+
+    it('ends a match on submit and starts the match that takes the court', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-11-23T18:20:00.000Z'));
+      const tournament = startTournament(
+        createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] }),
+        '2026-11-23T18:00:00.000Z'
+      );
+      const first = tournament.matches.find((match) => match.court === 11 && !match.completed)!;
+      const next = updateMatchScore(tournament, first.id, 21, 15);
+      const finished = next.matches.find((match) => match.id === first.id)!;
+      const replacement = next.matches.find((match) => !match.completed && match.court === 11);
+      expect(finished.startedAt).toBe('2026-11-23T18:00:00.000Z');
+      expect(finished.endedAt).toBe('2026-11-23T18:20:00.000Z');
+      expect(replacement?.startedAt).toBe('2026-11-23T18:20:00.000Z');
+    });
+
+    it('keeps the original end time when a score is edited', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-11-23T18:20:00.000Z'));
+      const tournament = startTournament(
+        createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] }),
+        '2026-11-23T18:00:00.000Z'
+      );
+      const first = tournament.matches.find((match) => match.court === 11)!;
+      const scored = updateMatchScore(tournament, first.id, 21, 15);
+      jest.setSystemTime(new Date('2026-11-23T19:00:00.000Z'));
+      const edited = updateMatchScore(scored, first.id, 21, 18, true);
+      expect(edited.matches.find((match) => match.id === first.id)?.endedAt).toBe('2026-11-23T18:20:00.000Z');
+    });
+
+    it('clears times on requeue and starts whoever takes the open court', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-11-23T18:40:00.000Z'));
+      let tournament = startTournament(
+        createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] }),
+        '2026-11-23T18:00:00.000Z'
+      );
+      const first = tournament.matches.find((match) => match.court === 11)!;
+      tournament = updateMatchScore(tournament, first.id, 21, 15);
+      const requeued = requeueMatch(tournament, first.id);
+      const waiting = requeued.matches.find((match) => match.id === first.id)!;
+      expect(waiting.completed).toBe(false);
+      expect(waiting.court).toBe(0);
+      expect(waiting.startedAt).toBeUndefined();
+      expect(waiting.endedAt).toBeUndefined();
+      expect(waiting.matchNumber).toBeUndefined();
+      const onCourt = requeued.matches.filter((match) => !match.completed && match.court > 0);
+      expect(onCourt.every((match) => match.startedAt)).toBe(true);
+    });
+
+    it('locks the next clear matches and leaves the rest tentative', () => {
+      const playing = {
+        id: 1,
+        round: 1,
+        court: 11,
+        teamAId: 1,
+        teamBId: 2,
+        teamA: { player1: 1, player2: 2 },
+        teamB: { player1: 3, player2: 4 },
+        scoreA: null,
+        scoreB: null,
+        completed: false,
+      } as Match;
+      const waiting = [
+        { ...playing, id: 7, court: 0, teamAId: 1, teamBId: 7, teamA: { player1: 1, player2: 2 }, teamB: { player1: 13, player2: 14 } },
+        { ...playing, id: 29, court: 0, teamAId: 3, teamBId: 4, teamA: { player1: 5, player2: 6 }, teamB: { player1: 7, player2: 8 } },
+        { ...playing, id: 31, court: 0, teamAId: 5, teamBId: 6, teamA: { player1: 9, player2: 10 }, teamB: { player1: 11, player2: 12 } },
+        { ...playing, id: 12, court: 0, teamAId: 8, teamBId: 9, teamA: { player1: 15, player2: 16 }, teamB: { player1: 17, player2: 18 } },
+      ] as Match[];
+      const cards = buildQueueCards([playing, ...waiting], waiting, 2);
+      expect(cards.map((card) => card.match.id)).toEqual([29, 31, 7, 12]);
+      expect(cards.map((card) => queuePlaceLabel(card.place))).toEqual([
+        'Confirmed Next',
+        'Confirmed Next +1',
+        'Tentative Queue',
+        'Tentative Queue',
+      ]);
+    });
+
+    it('numbers a match only once it is on court', () => {
+      const tournament = createTournament(sampleTeams, undefined, { courtNumbers: [11, 12] });
+      const playing = tournament.matches.filter((match) => match.court > 0);
+      const queued = tournament.matches.filter((match) => match.court <= 0);
+      expect(playing.map((match) => match.matchNumber).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([1, 2]);
+      expect(queued.every((match) => match.matchNumber == null)).toBe(true);
+
+      const started = startTournament(tournament, '2026-11-23T18:00:00.000Z');
+      const first = started.matches.find((match) => match.court === 11)!;
+      const next = updateMatchScore(started, first.id, 21, 15);
+      expect(next.matches.find((match) => match.id === first.id)?.matchNumber).toBe(first.matchNumber);
+      const replacement = next.matches.find((match) => match.court === 11 && match.id !== first.id);
+      expect(replacement?.matchNumber).toBe(3);
+      expect(next.matches.filter((match) => match.court <= 0).every((match) => match.matchNumber == null)).toBe(true);
     });
   });
 });

@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { ensureTournamentMeta, sql } from '@/lib/db';
-import { assembleTournament, persistMatchCourts } from '@/lib/tournamentRepo';
-import { UNASSIGNED_COURT, syncPlayingCourts } from '@/lib/gameLogic';
+import { assembleTournament, persistMatchCourts, persistMatchNumbers, persistOpenMatchStarts, snapshotMatchCourts } from '@/lib/tournamentRepo';
+import { UNASSIGNED_COURT, syncPlayingCourts, stampOpenMatchStarts } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -45,7 +45,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           completed = false,
           winner_team = null,
           queue_order = ${nextOrder},
-          court = ${UNASSIGNED_COURT}
+          finish_order = 0,
+          streak_a = 0,
+          streak_b = 0,
+          court = ${UNASSIGNED_COURT},
+          match_number = 0,
+          started_at = null,
+          ended_at = null
       where tournament_id = ${id} and id = ${numericMatchId}
     `;
 
@@ -62,9 +68,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const updated = await assembleTournament(id);
     if (updated) {
+      const before = snapshotMatchCourts(updated.matches);
       syncPlayingCourts(updated);
-      await persistMatchCourts(id, updated.matches);
-      await broadcastTournamentUpdate(id, updated);
+      await persistMatchCourts(id, updated.matches, before);
+      await persistMatchNumbers(id, updated.matches);
+      if (updated.startedAt) {
+        const at = new Date();
+        stampOpenMatchStarts(updated, at.toISOString());
+        await persistOpenMatchStarts(id, at);
+      }
+      after(() => broadcastTournamentUpdate(id, updated));
     }
     return NextResponse.json(updated);
   } catch (error: unknown) {

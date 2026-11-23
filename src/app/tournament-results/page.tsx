@@ -4,7 +4,7 @@ import { useState, useLayoutEffect } from 'react';
 import { TrophyIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageShell } from '@/components/PageShell';
 import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
-import { EVENT_TYPES, EVENT_TYPE_LABELS, Tournament, eventTypeOf, getRankedTeams, type EventType, type Team } from '@/lib/gameLogic';
+import { EVENT_TYPES, EVENT_TYPE_LABELS, Tournament, eventTypeOf, formatSideNames, getRankedTeams, isSinglesEvent, type EventType, type Team } from '@/lib/gameLogic';
 
 const MEDALS = {
   1: { label: 'Gold medal', fill: '#f5c518', edge: '#a16207', ribbon: '#eab308' },
@@ -192,7 +192,7 @@ interface TournamentResultCardProps {
 
 function teamNames(tournament: Tournament, team: Team) {
   const nameOf = (id: number) => tournament.players.find((player) => player.id === id)?.name ?? '';
-  return `${nameOf(team.player1Id)} & ${nameOf(team.player2Id)}`;
+  return formatSideNames(nameOf(team.player1Id), nameOf(team.player2Id));
 }
 
 function TournamentResultCard({ tournament, formatDate }: TournamentResultCardProps) {
@@ -240,7 +240,9 @@ function TournamentResultCard({ tournament, formatDate }: TournamentResultCardPr
 
       {expanded && (
         <div className="p-4 border-t bg-white">
-          <h4 className="font-semibold mb-1 text-gray-800">Final Team Standings</h4>
+          <h4 className="font-semibold mb-1 text-gray-800">
+            {isSinglesEvent(tournament.eventType) ? 'Final Player Standings' : 'Final Team Standings'}
+          </h4>
           <p className="results-standing-hint">Tap a player for their matches</p>
           <div className="space-y-2">
             {rest.map((team) => (
@@ -248,16 +250,20 @@ function TournamentResultCard({ tournament, formatDate }: TournamentResultCardPr
                 <span className="results-standing-rank">{team.rank}</span>
                 <div className="results-standing-team">
                   <span className={team.rank === 1 ? 'font-semibold text-yellow-600' : 'text-gray-800'}>
-                    Team {team.label}
+                    {isSinglesEvent(tournament.eventType) ? 'Player' : 'Team'} {team.label}
                   </span>
                   <p>
                     <button type="button" onClick={() => setSelectedTeamId(team.id)}>
                       {getPlayerName(team.player1Id)}
                     </button>
-                    <span aria-hidden="true"> & </span>
-                    <button type="button" onClick={() => setSelectedTeamId(team.id)}>
-                      {getPlayerName(team.player2Id)}
-                    </button>
+                    {getPlayerName(team.player2Id) ? (
+                      <>
+                        <span aria-hidden="true"> & </span>
+                        <button type="button" onClick={() => setSelectedTeamId(team.id)}>
+                          {getPlayerName(team.player2Id)}
+                        </button>
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 <span className="results-standing-record">

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Tournament, Match, validateScore, getTeamLabel, formatCourtLabel } from '@/lib/gameLogic';
+import { Tournament, Match, validateScore, getTeamLabel, formatCourtLabel, formatSideNames } from '@/lib/gameLogic';
+import { formatMatchWindow } from '@/lib/matchClock';
 import { hasUnsavedScoreInput } from '@/lib/tournamentSync';
 
 export type MatchCardVariant = 'default' | 'spotlight' | 'mini';
@@ -17,6 +18,7 @@ interface MatchCardProps {
   onRequeue?: (matchId: number) => void;
   nextMatchId?: number;
   roster?: boolean;
+  queueLabel?: string;
   initialEditing?: boolean;
   readOnly?: boolean;
   onUnsavedScoreChange?: (matchId: number, unsaved: boolean) => void;
@@ -32,6 +34,7 @@ export default function MatchCard({
   onRequeue,
   nextMatchId,
   roster = false,
+  queueLabel,
   initialEditing = false,
   readOnly = false,
   onUnsavedScoreChange,
@@ -73,7 +76,10 @@ export default function MatchCard({
   }, [match.id]);
 
   const getPlayerName = useCallback(
-    (playerId: number) => tournament.players.find((p) => p.id === playerId)?.name || `P${playerId}`,
+    (playerId: number) => {
+      if (playerId <= 0) return '';
+      return tournament.players.find((p) => p.id === playerId)?.name || `P${playerId}`;
+    },
     [tournament.players]
   );
 
@@ -103,7 +109,13 @@ export default function MatchCard({
     const statusClass = isCompleted ? 'match-mini-completed' : 'match-mini-future';
 
     const matchLabel =
-      labelMode === 'sequential' ? `Match ${match.id}` : `Round ${match.round}`;
+      queueLabel ??
+      (labelMode === 'sequential'
+        ? match.matchNumber
+          ? `Match ${match.matchNumber}`
+          : ''
+        : `Round ${match.round}`);
+    const timeLabel = isCompleted ? formatMatchWindow(match.startedAt, match.endedAt) : null;
 
     const side = (
       label: string,
@@ -115,7 +127,7 @@ export default function MatchCard({
       <div className="match-mini-side">
         <span className={`match-mini-badge ${labelClass}`}>{label}</span>
         <span className="match-mini-names">
-          {getPlayerName(player1)} & {getPlayerName(player2)}
+          {formatSideNames(getPlayerName(player1), getPlayerName(player2))}
         </span>
         {score != null && <span className="match-mini-score">{score}</span>}
       </div>
@@ -123,9 +135,22 @@ export default function MatchCard({
 
     const body = (
       <>
-        <div className="match-mini-top">
-          <span className="match-mini-round">{matchLabel}</span>
-        </div>
+        {(matchLabel || timeLabel) && (
+          <div className="match-mini-top">
+            {matchLabel ? (
+              <span
+                className={`match-mini-round${queueLabel ? ' match-mini-queue-label' : ''}${
+                  queueLabel?.startsWith('Tentative') ? ' is-tentative' : ''
+                }`}
+              >
+                {matchLabel}
+              </span>
+            ) : (
+              <span />
+            )}
+            {timeLabel ? <span className="match-mini-time">{timeLabel}</span> : null}
+          </div>
+        )}
         {side(
           teamALabel,
           'match-mini-team-a',
@@ -171,12 +196,12 @@ export default function MatchCard({
       : isUpNext
         ? 'match-mini-active'
         : 'match-mini-future';
-    const matchLabel = labelMode === 'sequential' ? `#${match.id}` : `R${match.round}`;
+    const matchLabel = labelMode === 'sequential' ? (match.matchNumber ? `#${match.matchNumber}` : '') : `R${match.round}`;
     const miniCourtLabel = formatCourtLabel(match.court, true);
     const body = (
       <>
         <div className="match-mini-top">
-          <span className="match-mini-round">{matchLabel}</span>
+          {matchLabel ? <span className="match-mini-round">{matchLabel}</span> : null}
           {miniCourtLabel ? <span className="match-mini-court">{miniCourtLabel}</span> : null}
         </div>
         <div className="match-mini-teams">
@@ -242,7 +267,9 @@ export default function MatchCard({
         {(() => {
           const courtLabel = formatCourtLabel(match.court);
           if (labelMode === 'sequential') {
-            return courtLabel ? `Match ${match.id} · ${courtLabel}` : `Match ${match.id}`;
+            const number = match.matchNumber ? `Match ${match.matchNumber}` : '';
+            if (number && courtLabel) return `${number} · ${courtLabel}`;
+            return number || courtLabel || '';
           }
           return courtLabel ? `Round ${match.round} · ${courtLabel}` : `Round ${match.round}`;
         })()}
@@ -255,7 +282,7 @@ export default function MatchCard({
           </div>
           <div className="flex-1 min-w-0 tab-player-names !mt-0">
             <div>{getPlayerName(match.teamA.player1)}</div>
-            <div>{getPlayerName(match.teamA.player2)}</div>
+            {getPlayerName(match.teamA.player2) ? <div>{getPlayerName(match.teamA.player2)}</div> : null}
           </div>
           {renderScore(scoreA, setScoreA, match.scoreA)}
         </div>
@@ -266,7 +293,7 @@ export default function MatchCard({
           </div>
           <div className="flex-1 min-w-0 tab-player-names !mt-0">
             <div>{getPlayerName(match.teamB.player1)}</div>
-            <div>{getPlayerName(match.teamB.player2)}</div>
+            {getPlayerName(match.teamB.player2) ? <div>{getPlayerName(match.teamB.player2)}</div> : null}
           </div>
           {renderScore(scoreB, setScoreB, match.scoreB)}
         </div>

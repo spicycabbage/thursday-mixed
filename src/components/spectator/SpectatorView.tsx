@@ -6,14 +6,20 @@ import {
   Tournament,
   Team,
   getDesktopSpotlightMatches,
+  orderPlayingNow,
+  buildQueueCards,
+  queuePlaceLabel,
+  type QueueCard,
   courtCountForTeams,
   getRankedTeams,
+  isSinglesEvent,
   isTournamentComplete,
 } from '@/lib/gameLogic';
 import MatchCard from '@/components/matches/MatchCard';
 import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
 import { CelebrationTrophy } from '@/components/matches/WinnerCelebrationSpotlight';
 import RankTab from '@/components/RankTab';
+import QueueExplainModal from '@/components/matches/QueueExplainModal';
 
 type SpectatorTab = 'playing' | 'queue' | 'completed' | 'ranking';
 
@@ -87,7 +93,9 @@ function SpectatorChampions({
         <p className="spectator-champions-kicker">Tournament complete</p>
         <h2 className="spectator-champions-title">{isTie ? 'Co-Champions' : 'Podium'}</h2>
         <p className="spectator-champions-sub">
-          {isTie ? `${firstPlace.length} teams tied for 1st` : '1st, 2nd, and 3rd'}
+          {isTie
+            ? `${firstPlace.length} ${isSinglesEvent(tournament.eventType) ? 'players' : 'teams'} tied for 1st`
+            : '1st, 2nd, and 3rd'}
         </p>
       </div>
 
@@ -104,7 +112,7 @@ function SpectatorChampions({
               <div className="spectator-champion-badge">{team.label}</div>
               <div className="spectator-champion-names">
                 <span>{name(team.player1Id)}</span>
-                <span>{name(team.player2Id)}</span>
+                {name(team.player2Id) ? <span>{name(team.player2Id)}</span> : null}
               </div>
             </div>
             <div className="spectator-champion-stats">
@@ -137,6 +145,7 @@ function SpectatorChampions({
 export default function SpectatorView({ tournament }: { tournament: Tournament }) {
   const [tab, setTab] = useState<SpectatorTab>('playing');
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+  const [queueCard, setQueueCard] = useState<QueueCard | null>(null);
 
   const sortedMatches = useMemo(
     () => [...tournament.matches].sort((a, b) => a.id - b.id),
@@ -146,8 +155,16 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
     () => getDesktopSpotlightMatches(sortedMatches, courtCountForTeams(tournament.teams.length)),
     [sortedMatches, tournament.teams.length]
   );
+  const playingNow = useMemo(() => orderPlayingNow(spotlight), [spotlight]);
+  const queueCards = useMemo(
+    () => buildQueueCards(tournament.matches, deferred, courtCountForTeams(tournament.teams.length)),
+    [tournament.matches, deferred, tournament.teams.length]
+  );
   const completed = useMemo(
-    () => sortedMatches.filter((match) => match.completed),
+    () =>
+      sortedMatches
+        .filter((match) => match.completed)
+        .sort((a, b) => (b.matchNumber ?? 0) - (a.matchNumber ?? 0)),
     [sortedMatches]
   );
   const tournamentComplete = isTournamentComplete(tournament);
@@ -178,9 +195,9 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
               podium={podium}
               onViewStandings={() => setTab('ranking')}
             />
-          ) : spotlight.length > 0 ? (
+          ) : playingNow.length > 0 ? (
             <div className="space-y-3">
-              {spotlight.map((match) => (
+              {playingNow.map((match) => (
                 <MatchCard
                   key={match.id}
                   match={match}
@@ -204,17 +221,19 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
             <span>Up next</span>
             <span>{deferred.length}</span>
           </div>
-          {deferred.length > 0 ? (
+          {queueCards.length > 0 ? (
             <div className="spectator-list">
-              {deferred.map((match) => (
+              {queueCards.map((card) => (
                 <MatchCard
-                  key={match.id}
-                  match={match}
+                  key={card.match.id}
+                  match={card.match}
                   tournament={tournament}
                   onScoreUpdate={noopScore}
                   variant="mini"
                   roster
                   labelMode="sequential"
+                  queueLabel={queuePlaceLabel(card.place)}
+                  onSelect={() => setQueueCard(card)}
                 />
               ))}
             </div>
@@ -233,7 +252,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
           </div>
           {completed.length > 0 ? (
             <div className="spectator-list">
-              {[...completed].reverse().map((match) => (
+              {completed.map((match) => (
                 <MatchCard
                   key={match.id}
                   match={match}
@@ -308,6 +327,9 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
         teamId={selectedTeamId}
         onClose={() => setSelectedTeamId(null)}
       />
+      {queueCard && (
+        <QueueExplainModal card={queueCard} tournament={tournament} onClose={() => setQueueCard(null)} />
+      )}
     </div>
   );
 }

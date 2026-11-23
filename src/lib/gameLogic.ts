@@ -47,20 +47,44 @@ export interface Match {
   completed: boolean;
   winnerTeam?: 'A' | 'B' | null;
   queueOrder?: number;
+  finishOrder?: number;
+  streakA?: number;
+  streakB?: number;
+  /** Handed out when the match reaches Playing Now. Absent while it is still in the queue. */
+  matchNumber?: number;
+  /** Set when the match is placed on a court after the tournament has started. */
+  startedAt?: string;
+  /** Set the first time a score is submitted for a match that had started. */
+  endedAt?: string;
 }
 
-export type EventType = 'MD' | 'WD' | 'XD';
+export type EventType = 'MD' | 'WD' | 'XD' | 'MS' | 'WS';
 
-export const EVENT_TYPES: EventType[] = ['MD', 'WD', 'XD'];
+export const DOUBLES_EVENT_TYPES: EventType[] = ['MD', 'WD', 'XD'];
+export const SINGLES_EVENT_TYPES: EventType[] = ['MS', 'WS'];
+export const EVENT_TYPES: EventType[] = [...DOUBLES_EVENT_TYPES, ...SINGLES_EVENT_TYPES];
 
 export const EVENT_TYPE_LABELS: Record<EventType, string> = {
   MD: "Men's Doubles",
   WD: "Women's Doubles",
   XD: 'Mixed Doubles',
+  MS: "Men's Singles",
+  WS: "Women's Singles",
 };
 
 export function isEventType(value: string): value is EventType {
-  return value === 'MD' || value === 'WD' || value === 'XD';
+  return (EVENT_TYPES as readonly string[]).includes(value);
+}
+
+export function isSinglesEvent(value: string | null | undefined): boolean {
+  return value === 'MS' || value === 'WS';
+}
+
+export function formatSideNames(primary: string, partner?: string | null): string {
+  const a = primary.trim();
+  const b = (partner ?? '').trim();
+  if (a && b) return `${a} & ${b}`;
+  return a || b;
 }
 
 export function eventTypeOf(value: string | null | undefined): EventType {
@@ -79,6 +103,8 @@ export interface Tournament {
   isFinalized: boolean;
   createdAt: Date;
   courtNumbers?: number[];
+  /** When Start was pressed. Absent until the tournament officially begins. */
+  startedAt?: string;
 }
 
 export interface TeamRegistration {
@@ -150,6 +176,8 @@ export function syncPlayingCourts(
   for (const match of tournament.matches) {
     if (!match.completed && !spotlightIds.has(match.id)) {
       match.court = UNASSIGNED_COURT;
+      match.streakA = undefined;
+      match.streakB = undefined;
     }
   }
 
@@ -174,7 +202,69 @@ export function syncPlayingCourts(
     if (next != null) match.court = next;
   }
 
+  for (const match of spotlight) {
+    if (!match.court) continue;
+    if ((match.streakA ?? 0) > 0 && (match.streakB ?? 0) > 0) continue;
+    match.streakA = nextRun(tournament.matches, match.teamAId);
+    match.streakB = nextRun(tournament.matches, match.teamBId);
+  }
+
+  assignMatchNumbers(tournament);
   return tournament;
+}
+
+/** Number matches that are on a court. Queue matches stay unnumbered. */
+export function assignMatchNumbers(tournament: Tournament): void {
+  let next = 0;
+  for (const match of tournament.matches) {
+    if ((match.matchNumber ?? 0) > next) next = match.matchNumber ?? 0;
+  }
+
+  const pending = tournament.matches.filter((match) => match.court > 0 && !(match.matchNumber && match.matchNumber > 0));
+  pending.sort((a, b) => {
+    const aStart = a.startedAt ? Date.parse(a.startedAt) : Number.NaN;
+    const bStart = b.startedAt ? Date.parse(b.startedAt) : Number.NaN;
+    const aHasStart = !Number.isNaN(aStart);
+    const bHasStart = !Number.isNaN(bStart);
+    if (aHasStart !== bHasStart) return aHasStart ? -1 : 1;
+    if (aHasStart && bHasStart && aStart !== bStart) return aStart - bStart;
+    const aFinish = a.finishOrder ?? 0;
+    const bFinish = b.finishOrder ?? 0;
+    if (aFinish !== bFinish) {
+      if (aFinish === 0) return 1;
+      if (bFinish === 0) return -1;
+      return aFinish - bFinish;
+    }
+    return a.id - b.id;
+  });
+
+  for (const match of pending) {
+    next += 1;
+    match.matchNumber = next;
+  }
+}
+
+/** Give a start time to every match that is on a court and does not have one yet. */
+export function stampOpenMatchStarts(tournament: Tournament, at: string): void {
+  if (!tournament.startedAt) return;
+  for (const match of tournament.matches) {
+    if (!match.completed && match.court > 0 && !match.startedAt) {
+      match.startedAt = at;
+    }
+  }
+}
+
+export function startTournament(tournament: Tournament, at = new Date().toISOString()): Tournament {
+  if (tournament.startedAt || tournament.isFinalized) return tournament;
+  const next: Tournament = {
+    ...tournament,
+    teams: tournament.teams.map((team) => ({ ...team })),
+    players: tournament.players.map((player) => ({ ...player })),
+    matches: tournament.matches.map((match) => ({ ...match })),
+    startedAt: at,
+  };
+  stampOpenMatchStarts(next, at);
+  return next;
 }
 
 /** Relabel stored court numbers, including already-finished matches. */
@@ -387,6 +477,7 @@ export function createTournament(
   date?: string,
   options?: { name?: string; eventType?: EventType; courtNumbers?: number[] }
 ): Tournament {
+  const singles = isSinglesEvent(options?.eventType);
   const teams: Team[] = teamRegistrations.map((reg, index) => {
     const teamId = index + 1;
     const [p1, p2] = getPlayerIdsForTeam(teamId);
@@ -394,7 +485,7 @@ export function createTournament(
       id: teamId,
       label: getTeamLabel(teamId),
       player1Id: p1,
-      player2Id: p2,
+      player2Id: singles ? 0 : p2,
       wins: 0,
       losses: 0,
       pointsFor: 0,
@@ -406,7 +497,7 @@ export function createTournament(
   const players: Player[] = teamRegistrations.flatMap((reg, index) => {
     const teamId = index + 1;
     const [p1, p2] = getPlayerIdsForTeam(teamId);
-    return [
+    const side: Player[] = [
       {
         id: p1,
         name: normalizeName(reg.player1),
@@ -417,7 +508,9 @@ export function createTournament(
         pointsAgainst: 0,
         pointDiff: 0,
       },
-      {
+    ];
+    if (!singles) {
+      side.push({
         id: p2,
         name: normalizeName(reg.player2),
         teamId,
@@ -426,8 +519,9 @@ export function createTournament(
         pointsFor: 0,
         pointsAgainst: 0,
         pointDiff: 0,
-      },
-    ];
+      });
+    }
+    return side;
   });
 
   const teamCount = teamRegistrations.length;
@@ -448,8 +542,8 @@ export function createTournament(
         court: UNASSIGNED_COURT,
         teamAId: matchup.teamA,
         teamBId: matchup.teamB,
-        teamA: { player1: aP1, player2: aP2 },
-        teamB: { player1: bP1, player2: bP2 },
+        teamA: { player1: aP1, player2: singles ? 0 : aP2 },
+        teamB: { player1: bP1, player2: singles ? 0 : bP2 },
         scoreA: null,
         scoreB: null,
         completed: false,
@@ -518,6 +612,7 @@ function applyMatchStats(
 
   const updatePlayers = (playerIds: [number, number], forScore: number, againstScore: number, won: boolean) => {
     for (const pid of playerIds) {
+      if (!pid) continue;
       const player = tournament.players.find((p) => p.id === pid);
       if (!player) continue;
       player.pointsFor += forScore;
@@ -583,6 +678,7 @@ export function updateMatchScore(
   const wasCompleted = match.completed;
   const freedCourt = match.court;
   recomputeAllStats(updatedTournament, { id: matchId, scoreA, scoreB });
+  if (!wasCompleted) match.finishOrder = nextFinishOrder(updatedTournament.matches, match.id);
 
   if (!isEdit) {
     const roundMatches = updatedTournament.matches.filter((m) => m.round === match.round);
@@ -592,7 +688,12 @@ export function updateMatchScore(
       updatedTournament.currentRound = match.round + 1;
     }
     if (!wasCompleted) {
+      const at = new Date().toISOString();
+      if (updatedTournament.startedAt && match.startedAt) {
+        match.endedAt = match.endedAt ?? at;
+      }
       syncPlayingCourts(updatedTournament, { freedCourt: freedCourt || undefined });
+      if (updatedTournament.startedAt) stampOpenMatchStarts(updatedTournament, match.endedAt ?? at);
     }
   }
 
@@ -601,6 +702,82 @@ export function updateMatchScore(
 
 export function matchQueueRank(match: Match): number {
   return match.queueOrder && match.queueOrder > 0 ? match.queueOrder : match.id;
+}
+
+function nextFinishOrder(matches: Match[], matchId: number): number {
+  let max = 0;
+  for (const match of matches) {
+    if (match.id === matchId) continue;
+    const order = match.finishOrder ?? 0;
+    if (order > max) max = order;
+  }
+  return max + 1;
+}
+
+const NEVER_REST = 1000;
+
+function isRequeued(match: Match): boolean {
+  return (match.queueOrder ?? 0) > 0 && match.queueOrder !== match.id;
+}
+
+function gamesPlayed(matches: Match[], teamId: number): number {
+  return matches.filter((match) => match.completed && (match.teamAId === teamId || match.teamBId === teamId)).length;
+}
+
+function finishOrdersFor(matches: Match[], teamId: number): number[] {
+  return matches
+    .filter((match) => match.completed && (match.finishOrder ?? 0) > 0 && (match.teamAId === teamId || match.teamBId === teamId))
+    .map((match) => match.finishOrder ?? 0)
+    .sort((a, b) => a - b);
+}
+
+function restCount(matches: Match[], teamId: number): number {
+  const finishes = finishOrdersFor(matches, teamId);
+  if (finishes.length === 0) return NEVER_REST;
+  const last = finishes[finishes.length - 1];
+  return matches.filter((match) => match.completed && (match.finishOrder ?? 0) > last).length;
+}
+
+function latestFinished(matches: Match[], teamId: number): Match | null {
+  let best: Match | null = null;
+  for (const match of matches) {
+    if (!match.completed || (match.finishOrder ?? 0) <= 0) continue;
+    if (match.teamAId !== teamId && match.teamBId !== teamId) continue;
+    if (!best || (match.finishOrder ?? 0) > (best.finishOrder ?? 0)) best = match;
+  }
+  return best;
+}
+
+function nextRun(matches: Match[], teamId: number): number {
+  if (restCount(matches, teamId) > 0) return 1;
+  const last = latestFinished(matches, teamId);
+  if (!last) return 1;
+  const previous = last.teamAId === teamId ? last.streakA ?? 1 : last.streakB ?? 1;
+  return Math.max(previous, 1) + 1;
+}
+
+function restRank(match: Match, matches: Match[]): number[] {
+  const teams = [match.teamAId, match.teamBId];
+  const incoming = Math.max(...teams.map((teamId) => nextRun(matches, teamId)));
+  const minRest = Math.min(...teams.map((teamId) => restCount(matches, teamId)));
+  const maxGames = Math.max(...teams.map((teamId) => gamesPlayed(matches, teamId)));
+  const sumGames = teams.reduce((total, teamId) => total + gamesPlayed(matches, teamId), 0);
+  return [incoming, -minRest, maxGames, sumGames, matchQueueRank(match), match.id];
+}
+
+function compareRank(a: number[], b: number[]): number {
+  for (let index = 0; index < a.length; index++) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return 0;
+}
+
+function pickNextMatch(pool: Match[], matches: Match[]): Match | null {
+  const normal = pool.filter((match) => !isRequeued(match));
+  const primary = normal.length > 0 ? normal : pool;
+  if (primary.length === 0) return null;
+  const ranked = primary.slice().sort((a, b) => compareRank(restRank(a, matches), restRank(b, matches)));
+  return ranked[0] ?? null;
 }
 
 export function requeueMatch(tournament: Tournament, matchId: number): Tournament {
@@ -626,7 +803,13 @@ export function requeueMatch(tournament: Tournament, matchId: number): Tournamen
   match.completed = false;
   match.winnerTeam = null;
   match.queueOrder = nextOrder;
+  match.finishOrder = undefined;
+  match.streakA = undefined;
+  match.streakB = undefined;
   match.court = UNASSIGNED_COURT;
+  match.matchNumber = undefined;
+  match.startedAt = undefined;
+  match.endedAt = undefined;
 
   recomputeAllStats(updatedTournament);
   const incompleteRounds = updatedTournament.matches
@@ -634,6 +817,7 @@ export function requeueMatch(tournament: Tournament, matchId: number): Tournamen
     .map((item) => item.round);
   updatedTournament.currentRound = Math.min(...incompleteRounds);
   syncPlayingCourts(updatedTournament);
+  if (updatedTournament.startedAt) stampOpenMatchStarts(updatedTournament, new Date().toISOString());
 
   return updatedTournament;
 }
@@ -686,8 +870,12 @@ export function getTeamDisplayName(tournament: Tournament, teamId: number): stri
   const team = tournament.teams.find((t) => t.id === teamId);
   if (!team) return `Team ${getTeamLabel(teamId)}`;
   const p1 = tournament.players.find((p) => p.id === team.player1Id)?.name ?? '';
-  const p2 = tournament.players.find((p) => p.id === team.player2Id)?.name ?? '';
-  return `Team ${team.label}: ${p1} & ${p2}`;
+  const p2 = team.player2Id
+    ? (tournament.players.find((p) => p.id === team.player2Id)?.name ?? '')
+    : '';
+  const names = formatSideNames(p1, p2);
+  if (!p2) return names || `Player ${team.label}`;
+  return `Team ${team.label}: ${names}`;
 }
 
 export interface TeamMatchSummary {
@@ -734,7 +922,9 @@ export function isTournamentComplete(tournament: Tournament): boolean {
 }
 
 export function getMatchPlayerIds(match: Match): number[] {
-  return [match.teamA.player1, match.teamA.player2, match.teamB.player1, match.teamB.player2];
+  return [match.teamA.player1, match.teamA.player2, match.teamB.player1, match.teamB.player2].filter(
+    (id) => id > 0
+  );
 }
 
 export function matchesShareParticipants(a: Match, b: Match): boolean {
@@ -747,9 +937,11 @@ export function matchesConflictWithAny(match: Match, others: Match[]): boolean {
 }
 
 /**
- * Pick up to maxSpotlight incomplete matches for desktop spotlight.
- * Defaults to 2 courts; callers should pass the tournament court count (3 for 9-team events).
- * Prefer no shared players; if none qualify after scanning the queue, fill with the next match anyway.
+ * Pick up to maxSpotlight incomplete matches for the courts in use.
+ * Matches already on a court stay there. An open court goes to a match that
+ * shares no players with whoever is still playing. Among those, take the team
+ * that has had the longest break. A fourth game in a row waits until the other
+ * court finishes. A clashing match is never sent out.
  */
 export function getDesktopSpotlightMatches(
   matches: Match[],
@@ -760,32 +952,126 @@ export function getDesktopSpotlightMatches(
     .sort((a, b) => matchQueueRank(a) - matchQueueRank(b) || a.id - b.id);
 
   const spotlight: Match[] = [];
-  const deferred: Match[] = [];
-
+  const usedCourts = new Set<number>();
   for (const match of incomplete) {
-    if (spotlight.length >= maxSpotlight) {
-      deferred.push(match);
-      continue;
+    if (spotlight.length >= maxSpotlight) break;
+    if (match.court > 0 && !usedCourts.has(match.court)) {
+      spotlight.push(match);
+      usedCourts.add(match.court);
     }
-    if (matchesConflictWithAny(match, spotlight)) {
-      deferred.push(match);
-      continue;
-    }
-    spotlight.push(match);
   }
 
-  if (spotlight.length < maxSpotlight && deferred.length > 0) {
-    const overflow: Match[] = [];
-    for (const match of deferred) {
-      if (spotlight.length < maxSpotlight) {
-        spotlight.push(match);
-      } else {
-        overflow.push(match);
-      }
-    }
-    deferred.length = 0;
-    deferred.push(...overflow);
+  const seated = new Set(spotlight.map((match) => match.id));
+  while (spotlight.length < maxSpotlight) {
+    const waiting = incomplete.filter((match) => !seated.has(match.id));
+    if (waiting.length === 0) break;
+    const clean = waiting.filter((match) => !matchesConflictWithAny(match, spotlight));
+    const safe = clean.filter((match) => [match.teamAId, match.teamBId].every((teamId) => nextRun(matches, teamId) < 4));
+    const pool = safe.length > 0 ? safe : spotlight.length === 0 ? clean : [];
+    if (pool.length === 0) break;
+    const pick = pickNextMatch(pool, matches);
+    if (!pick) break;
+    spotlight.push(pick);
+    seated.add(pick.id);
   }
 
+  const deferred = incomplete.filter((match) => !seated.has(match.id));
+  deferred.sort((a, b) => {
+    const requeueDelta = Number(isRequeued(a)) - Number(isRequeued(b));
+    if (requeueDelta !== 0) return requeueDelta;
+    return compareRank(restRank(a, matches), restRank(b, matches));
+  });
   return { spotlight, deferred };
+}
+
+export type QueuePlace =
+  | { kind: 'confirmed'; offset: number }
+  | { kind: 'tentative'; reason: 'on-court' | 'streak' | 'overlap' | 'later' | 'requeued' };
+
+export interface QueueCard {
+  match: Match;
+  place: QueuePlace;
+}
+
+export function queuePlaceLabel(place: QueuePlace): string {
+  if (place.kind === 'tentative') return 'Tentative Queue';
+  if (place.offset === 0) return 'Confirmed Next';
+  return `Confirmed Next +${place.offset}`;
+}
+
+export function queuePlaceExplanation(place: QueuePlace): string {
+  if (place.kind === 'confirmed') {
+    if (place.offset === 0) {
+      return 'This match is next on court. Both teams are free, so this spot will not move because someone else has waited longer or played fewer games.';
+    }
+    const spots = place.offset === 1 ? '1 match' : `${place.offset} matches`;
+    return `This match is locked ${spots} after the next one. These spots go on court in this order as courts open. Wait time and busyness will not jump them.`;
+  }
+  switch (place.reason) {
+    case 'on-court':
+      return 'Someone in this match is still playing. It cannot be called until that game ends, and by then the line can be re-sorted by who has waited longer and who has played more.';
+    case 'streak':
+      return 'One of these teams would be playing a fourth game in a row, so they wait. A team that has had a longer break can be called ahead of them.';
+    case 'overlap':
+      return 'This match shares a player with a confirmed match ahead of it, so it waits. The rest of the line can still be re-sorted by wait time and how busy each team is.';
+    case 'requeued':
+      return 'This match was sent back to the queue, so it sits behind the locked spots. Its place can still change based on wait time and busyness.';
+    case 'later':
+      return 'This match is past the locked spots. When a court opens, the line can be re-sorted. A team that has waited longer, or played fewer games, can move ahead.';
+    default: {
+      const unreachable: never = place.reason;
+      return unreachable;
+    }
+  }
+}
+
+/**
+ * The next clear matches, one per court, are locked. Anything that clashes,
+ * is on a long streak, or sits further back can still be re-sorted.
+ */
+export function buildQueueCards(matches: Match[], deferred: Match[], courtCount: number): QueueCard[] {
+  const playing = matches.filter((match) => !match.completed && match.court > 0);
+  const limit = Math.max(courtCount, 1);
+  const normalWaiting = deferred.some((match) => !isRequeued(match));
+  const confirmed: QueueCard[] = [];
+  const tentative: QueueCard[] = [];
+  const confirmedMatches: Match[] = [];
+
+  for (const match of deferred) {
+    if (confirmed.length >= limit) {
+      tentative.push({ match, place: { kind: 'tentative', reason: isRequeued(match) ? 'requeued' : 'later' } });
+      continue;
+    }
+    if (normalWaiting && isRequeued(match)) {
+      tentative.push({ match, place: { kind: 'tentative', reason: 'requeued' } });
+      continue;
+    }
+    if (matchesConflictWithAny(match, playing)) {
+      tentative.push({ match, place: { kind: 'tentative', reason: 'on-court' } });
+      continue;
+    }
+    if (matchesConflictWithAny(match, confirmedMatches)) {
+      tentative.push({ match, place: { kind: 'tentative', reason: 'overlap' } });
+      continue;
+    }
+    const streak = [match.teamAId, match.teamBId].some((teamId) => nextRun(matches, teamId) >= 4);
+    if (streak) {
+      tentative.push({ match, place: { kind: 'tentative', reason: 'streak' } });
+      continue;
+    }
+    confirmedMatches.push(match);
+    confirmed.push({ match, place: { kind: 'confirmed', offset: confirmedMatches.length - 1 } });
+  }
+
+  return [...confirmed, ...tentative];
+}
+
+/** Oldest start on the left. The match that just went on court stays on the right. */
+export function orderPlayingNow(matches: Match[]): Match[] {
+  const started = (match: Match) => {
+    if (!match.startedAt) return Number.POSITIVE_INFINITY;
+    const time = Date.parse(match.startedAt);
+    return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+  };
+  return [...matches].sort((a, b) => started(a) - started(b) || a.id - b.id);
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Tournament, TEAM_LABELS, duplicateNameKeys, normalizeName } from '@/lib/gameLogic';
+import { Tournament, TEAM_LABELS, duplicateNameKeys, isSinglesEvent, normalizeName } from '@/lib/gameLogic';
 import { PencilIcon } from '@heroicons/react/24/outline';
 
 interface PlayerListEditorProps {
@@ -44,8 +44,9 @@ export default function PlayerListEditor({
     }
   }, [tournament, isEditing]);
 
+  const singles = isSinglesEvent(tournament.eventType);
   const duplicateKeys = duplicateNameKeys(
-    editedTeams.flatMap((team) => [team.player1, team.player2])
+    editedTeams.flatMap((team) => (singles ? [team.player1] : [team.player1, team.player2]))
   );
 
   const handleSaveEdit = () => {
@@ -53,7 +54,7 @@ export default function PlayerListEditor({
     onUpdateTeams(
       editedTeams.map((team) => ({
         player1: normalizeName(team.player1),
-        player2: normalizeName(team.player2),
+        player2: singles ? '' : normalizeName(team.player2),
       }))
     );
     setIsEditing(false);
@@ -73,7 +74,7 @@ export default function PlayerListEditor({
   };
 
   const isValidTeams = () =>
-    editedTeams.every((t) => t.player1.trim() && t.player2.trim());
+    editedTeams.every((t) => t.player1.trim() && (singles || t.player2.trim()));
 
   const getPlayerName = (playerId: number) =>
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
@@ -95,7 +96,7 @@ export default function PlayerListEditor({
             <div className="flex-1 min-w-0">
               {!isDesktop && (
                 <div className="font-bold text-gray-900 text-base mb-1">
-                  Team {TEAM_LABELS[index]}
+                  {singles ? 'Player' : 'Team'} {TEAM_LABELS[index]}
                 </div>
               )}
               {isEditing ? (
@@ -117,8 +118,9 @@ export default function PlayerListEditor({
                       }
                     }}
                     className="app-input"
-                    placeholder="Player 1"
+                    placeholder={singles ? 'Player name' : 'Player 1'}
                   />
+                  {!singles && (
                   <input
                     type="text"
                     value={editedTeams[index]?.player2 ?? ''}
@@ -138,11 +140,12 @@ export default function PlayerListEditor({
                     className="app-input"
                     placeholder="Player 2"
                   />
+                  )}
                 </div>
               ) : (
                 <div className={isDesktop ? 'player-list-editor-names' : 'tab-player-names'}>
                   <div>{getPlayerName(team.player1Id)}</div>
-                  <div>{getPlayerName(team.player2Id)}</div>
+                  {!singles && <div>{getPlayerName(team.player2Id)}</div>}
                 </div>
               )}
             </div>
@@ -159,7 +162,15 @@ export default function PlayerListEditor({
             className={!canEdit ? 'tab-btn-disabled' : 'tab-btn-primary'}
           >
             <PencilIcon className="w-5 h-5 inline mr-2" />
-            {isFinalized ? 'Tournament Finalized' : !isEditable ? 'Teams Locked' : 'Update Teams'}
+            {isFinalized
+              ? 'Tournament Finalized'
+              : !isEditable
+                ? singles
+                  ? 'Players Locked'
+                  : 'Teams Locked'
+                : singles
+                  ? 'Update Players'
+                  : 'Update Teams'}
           </button>
         ) : (
           <div className={isDesktop ? 'player-list-editor-edit-actions' : 'space-y-3'}>

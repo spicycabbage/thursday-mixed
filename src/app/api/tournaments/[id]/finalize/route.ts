@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { assembleTournament } from '@/lib/tournamentRepo';
 import { analyticsCache } from '@/lib/cache';
@@ -13,7 +13,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     if (!updated) {
       return NextResponse.json({ error: 'Tournament not found' }, { status: 404 });
     }
-    void broadcastTournamentUpdate(id, updated);
+    after(() => broadcastTournamentUpdate(id, updated));
     return NextResponse.json(updated);
   } catch (e: any) {
     return NextResponse.json({ error: e.message || 'Server error' }, { status: 500 });

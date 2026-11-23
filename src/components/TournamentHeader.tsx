@@ -11,6 +11,8 @@ interface TournamentHeaderProps {
   onEditPlayers?: () => void;
   editPlayersDisabled?: boolean;
   editPlayersTitle?: string;
+  onStart?: () => void;
+  startDisabled?: boolean;
 }
 
 export default function TournamentHeader({
@@ -22,6 +24,8 @@ export default function TournamentHeader({
   onEditPlayers,
   editPlayersDisabled = false,
   editPlayersTitle = 'Edit players',
+  onStart,
+  startDisabled = false,
 }: TournamentHeaderProps) {
   const formatDate = (dateString: string) => {
     const [y, m, d] = dateString.split('-').map(Number);
@@ -45,27 +49,41 @@ export default function TournamentHeader({
   return (
     <div className="shrink-0 border-b border-gray-300">
       <div className="tournament-header-bar px-4 py-2.5 border-b border-gray-300 bg-white">
-        <div className="min-w-0">
+        <div className="min-w-0 w-full">
           <div className="text-xs font-extrabold tracking-wide text-blue-800">
             {eventType || 'XD'}
             {name?.trim() ? ` · ${name.trim()}` : ''}
           </div>
-          <div className="text-2xl text-gray-900 font-bold tournament-header-date">
-            {formatDate(date)}
+          <div className="tournament-header-date-row">
+            <div className="text-2xl text-gray-900 font-bold tournament-header-date">
+              {formatDate(date)}
+            </div>
+            <div className="tournament-header-actions">
+              {onStart && (
+                <button
+                  type="button"
+                  onClick={onStart}
+                  disabled={startDisabled}
+                  className="tournament-start-btn"
+                >
+                  Start
+                </button>
+              )}
+              {onEditPlayers && (
+                <button
+                  type="button"
+                  onClick={onEditPlayers}
+                  disabled={editPlayersDisabled}
+                  className="tournament-header-edit-btn hidden md:flex"
+                  title={editPlayersTitle}
+                  aria-label={editPlayersTitle}
+                >
+                  <PencilIcon className="w-5 h-5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        {onEditPlayers && (
-          <button
-            type="button"
-            onClick={onEditPlayers}
-            disabled={editPlayersDisabled}
-            className="tournament-header-edit-btn hidden md:flex"
-            title={editPlayersTitle}
-            aria-label={editPlayersTitle}
-          >
-            <PencilIcon className="w-5 h-5" />
-          </button>
-        )}
       </div>
 
       <div className="tournament-tab-nav flex bg-white">

@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { Tournament, updateMatchScore, requeueMatch, isTournamentComplete, getTournamentRoundCount, getTeamLabel } from '@/lib/gameLogic';
+import { Tournament, updateMatchScore, requeueMatch, startTournament, isTournamentComplete, getTournamentRoundCount, getTeamLabel } from '@/lib/gameLogic';
 import { subscribeLiveTournament } from '@/lib/liveUpdates';
 import { readCachedTournament, writeCachedTournament } from '@/lib/tournamentCache';
-import { canApplyRemoteTournament, TOURNAMENT_REFRESH_MS } from '@/lib/tournamentSync';
+import { canApplyRemoteTournament, TOURNAMENT_LIVE_REFRESH_MS, TOURNAMENT_REFRESH_MS } from '@/lib/tournamentSync';
 import { PageLoading, PageShell } from '@/components/PageShell';
 import TournamentHeader from '@/components/TournamentHeader';
 import PlayersTab from '@/components/PlayersTab';
@@ -47,6 +47,7 @@ export default function TournamentScreen({
   const [toast, setToast] = useState<string | null>(null);
   const [showPlayersModal, setShowPlayersModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [starting, setStarting] = useState(false);
   const tabletLayout = useSyncExternalStore(
     subscribeTabletLayout,
     getTabletLayoutSnapshot,
@@ -56,6 +57,8 @@ export default function TournamentScreen({
   const pendingWritesRef = useRef(0);
   const unsavedScoreIdsRef = useRef(new Set<number>());
   const refreshFromServerRef = useRef<() => Promise<void>>(async () => {});
+  const realtimeLiveRef = useRef(false);
+  const lastServerSyncRef = useRef(0);
 
   useEffect(() => {
     latestTournamentRef.current = tournament;
@@ -75,6 +78,7 @@ export default function TournamentScreen({
       const res = await fetch(`/api/tournaments/${id}`, { cache: 'no-store' });
       if (!res.ok) return;
       const remote = (await res.json()) as Tournament | null;
+      lastServerSyncRef.current = Date.now();
       if (remote) applyRemoteTournament(remote);
     } catch {}
   };
@@ -104,7 +108,12 @@ export default function TournamentScreen({
     const tick = () => {
       if (!cancelled) void refreshFromServerRef.current();
     };
-    const interval = window.setInterval(tick, TOURNAMENT_REFRESH_MS);
+    const pollTick = () => {
+      const sinceSync = Date.now() - lastServerSyncRef.current;
+      if (realtimeLiveRef.current && sinceSync < TOURNAMENT_LIVE_REFRESH_MS) return;
+      tick();
+    };
+    const interval = window.setInterval(pollTick, TOURNAMENT_REFRESH_MS);
     const onFocus = () => tick();
     const onVisibility = () => {
       if (document.visibilityState === 'visible') tick();
@@ -177,7 +186,11 @@ export default function TournamentScreen({
       if (parsedTournament) {
         unsubscribe = subscribeLiveTournament(parsedTournament.id, {
           onSync: (serverTournament) => {
+            lastServerSyncRef.current = Date.now();
             applyRemoteTournament(serverTournament);
+          },
+          onStatus: (live) => {
+            realtimeLiveRef.current = live;
           },
           onToast: (payload) => {
             const { round, scoreA, scoreB, matchId } = payload;
@@ -236,7 +249,12 @@ export default function TournamentScreen({
         const error = await response.json();
         console.error('API Error:', response.status, error);
       } else {
-        console.log('Score saved successfully');
+        const saved = (await response.json()) as Tournament;
+        if (saved?.matches) {
+          setTournament(saved);
+          try { localStorage.setItem('currentTournament', JSON.stringify(saved)); } catch {}
+          writeCachedTournament(saved);
+        }
       }
     } catch (error) {
       console.error('Failed to save score to database:', error);
@@ -257,16 +275,8 @@ export default function TournamentScreen({
       if (currentRoundComplete && wasJustCompleted) {
         // Wait 1.5 seconds to show completed state, then proceed
         setTimeout(() => {
-          // Force another save to be absolutely sure
-          localStorage.setItem('currentTournament', JSON.stringify(updatedTournament));
-          
           if (updatedTournament.currentRound === getTournamentRoundCount(updatedTournament.matches) && currentRoundComplete) {
-            // Tournament complete - go to rank tab
             setActiveTab('rank');
-          } else {
-            // Move to next round - the tournament state already updated currentRound
-            // Force re-render by updating the tournament state
-            setTournament({...updatedTournament});
           }
         }, 1500);
       }
@@ -366,6 +376,37 @@ export default function TournamentScreen({
     }
   };
 
+  const handleStartTournament = async () => {
+    if (!tournament || tournament.startedAt || tournament.isFinalized || starting) return;
+    const previous = tournament;
+    const optimistic = startTournament(tournament);
+    setStarting(true);
+    beginWrite();
+    setTournament(optimistic);
+    try { localStorage.setItem('currentTournament', JSON.stringify(optimistic)); } catch {}
+    try {
+      const res = await fetch(`/api/tournaments/${tournament.id}/start`, { method: 'POST' });
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        setTournament(previous);
+        try { localStorage.setItem('currentTournament', JSON.stringify(previous)); } catch {}
+        alert(error?.error || 'Could not start the tournament.');
+        return;
+      }
+      const saved = (await res.json()) as Tournament;
+      setTournament(saved);
+      try { localStorage.setItem('currentTournament', JSON.stringify(saved)); } catch {}
+      writeCachedTournament(saved);
+    } catch {
+      setTournament(previous);
+      try { localStorage.setItem('currentTournament', JSON.stringify(previous)); } catch {}
+      alert('Could not start the tournament.');
+    } finally {
+      setStarting(false);
+      endWrite();
+    }
+  };
+
   const handleSaveCourtNumbers = async (courtNumbers: number[]) => {
     if (!tournament) return;
     beginWrite();
@@ -437,6 +478,8 @@ export default function TournamentScreen({
           onTabChange={setActiveTab}
           onEditPlayers={() => setShowPlayersModal(true)}
           editPlayersTitle={playersEditTitle}
+          onStart={!tournament.startedAt && !tournament.isFinalized ? handleStartTournament : undefined}
+          startDisabled={starting}
         />
 
         <div className="tournament-tab-scroll">

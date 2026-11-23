@@ -16,9 +16,15 @@ import {
 
   recomputeAllStats,
 
+  assignMatchNumbers,
+
   normalizeName,
 
   eventTypeOf,
+
+  isSinglesEvent,
+
+  toPgIntArray,
 
 } from '@/lib/gameLogic';
 
@@ -72,6 +78,18 @@ type DbMatchRow = {
 
   queue_order?: number | null;
 
+  finish_order?: number | null;
+
+  streak_a?: number | null;
+
+  streak_b?: number | null;
+
+  started_at?: string | Date | null;
+
+  ended_at?: string | Date | null;
+
+  match_number?: number | null;
+
 };
 
 
@@ -95,6 +113,13 @@ function groupByTournamentId<T extends { tournament_id: string }>(rows: T[]): Ma
 }
 
 
+
+function toIsoTimestamp(value: unknown): string | undefined {
+  if (value == null || value === '') return undefined;
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
+}
 
 function buildTournamentFromRows(
 
@@ -134,7 +159,9 @@ function buildTournamentFromRows(
 
       player1Id: teamPlayers[0]?.id ?? (teamId - 1) * 2 + 1,
 
-      player2Id: teamPlayers[1]?.id ?? (teamId - 1) * 2 + 2,
+      player2Id: isSinglesEvent(tr.event_type)
+        ? 0
+        : (teamPlayers[1]?.id ?? (teamId - 1) * 2 + 2),
 
       wins: 0,
 
@@ -196,7 +223,19 @@ function buildTournamentFromRows(
 
     completed: m.completed,
 
+    startedAt: toIsoTimestamp(m.started_at),
+
+    endedAt: toIsoTimestamp(m.ended_at),
+
+    matchNumber: m.match_number && m.match_number > 0 ? m.match_number : undefined,
+
     queueOrder: m.queue_order && m.queue_order > 0 ? m.queue_order : m.id,
+
+    finishOrder: m.finish_order && m.finish_order > 0 ? m.finish_order : undefined,
+
+    streakA: m.streak_a && m.streak_a > 0 ? m.streak_a : undefined,
+
+    streakB: m.streak_b && m.streak_b > 0 ? m.streak_b : undefined,
 
     winnerTeam:
 
@@ -227,6 +266,8 @@ function buildTournamentFromRows(
     isFinalized: tr.is_finalized,
 
     createdAt: new Date(tr.created_at),
+
+    startedAt: toIsoTimestamp(tr.started_at),
     courtNumbers: Array.isArray(tr.court_numbers) ? tr.court_numbers : undefined,
 
   };
@@ -234,6 +275,8 @@ function buildTournamentFromRows(
 
 
   recomputeAllStats(tournament);
+
+  assignMatchNumbers(tournament);
 
   tournament.currentRound = tr.current_round;
 
@@ -279,7 +322,13 @@ export async function assembleTournament(id: string): Promise<Tournament | null>
           'score_b', m.score_b,
           'completed', m.completed,
           'winner_team', m.winner_team,
-          'queue_order', coalesce(m.queue_order, 0)
+          'queue_order', coalesce(m.queue_order, 0),
+          'finish_order', coalesce(m.finish_order, 0),
+          'streak_a', coalesce(m.streak_a, 0),
+          'streak_b', coalesce(m.streak_b, 0),
+          'started_at', m.started_at,
+          'ended_at', m.ended_at,
+          'match_number', coalesce(m.match_number, 0)
         ) order by m.id)
         from matches m
         where m.tournament_id = t.id
@@ -291,7 +340,10 @@ export async function assembleTournament(id: string): Promise<Tournament | null>
 
   const row = rows[0];
   if (!row) return null;
-  return buildTournamentFromRows(row.tournament, row.players, row.matches);
+  const needsNumbers = row.matches.some((match) => Number(match.court) > 0 && !(Number(match.match_number) > 0));
+  const tournament = buildTournamentFromRows(row.tournament, row.players, row.matches);
+  if (needsNumbers) await persistMatchNumbers(id, tournament.matches);
+  return tournament;
 }
 
 
@@ -326,7 +378,13 @@ export async function assembleTournaments(rows: DbTournamentRow[]): Promise<Tour
 
       team_a_p1, team_a_p2, team_b_p1, team_b_p2,
 
-      score_a, score_b, completed, winner_team
+      score_a, score_b, completed, winner_team, coalesce(queue_order, 0) as queue_order,
+
+      coalesce(finish_order, 0) as finish_order,
+
+      coalesce(streak_a, 0) as streak_a, coalesce(streak_b, 0) as streak_b,
+
+      started_at, ended_at, coalesce(match_number, 0) as match_number
 
     from matches where tournament_id in ${sql(ids)}
 
@@ -360,8 +418,60 @@ export async function assembleTournaments(rows: DbTournamentRow[]): Promise<Tour
 
 }
 
-export async function persistMatchCourts(tournamentId: string, matches: Match[]): Promise<void> {
-  for (const match of matches) {
-    await sql`update matches set court = ${match.court} where tournament_id = ${tournamentId} and id = ${match.id}`;
-  }
+export type MatchCourtSnapshot = Map<number, string>;
+
+function courtKey(match: Match): string {
+  return `${match.court}|${match.streakA ?? 0}|${match.streakB ?? 0}`;
+}
+
+export function snapshotMatchCourts(matches: Match[]): MatchCourtSnapshot {
+  return new Map(matches.map((match) => [match.id, courtKey(match)]));
+}
+
+/** Writes court/streak changes in one statement, skipping matches that match `before`. */
+export async function persistMatchCourts(
+  tournamentId: string,
+  matches: Match[],
+  before?: MatchCourtSnapshot
+): Promise<void> {
+  const changed = before
+    ? matches.filter((match) => before.get(match.id) !== courtKey(match))
+    : matches;
+  if (changed.length === 0) return;
+
+  await sql`
+    update matches m
+    set court = v.court, streak_a = v.streak_a, streak_b = v.streak_b
+    from unnest(
+      ${toPgIntArray(changed.map((match) => match.id))}::int[],
+      ${toPgIntArray(changed.map((match) => match.court))}::int[],
+      ${toPgIntArray(changed.map((match) => match.streakA ?? 0))}::int[],
+      ${toPgIntArray(changed.map((match) => match.streakB ?? 0))}::int[]
+    ) as v(id, court, streak_a, streak_b)
+    where m.tournament_id = ${tournamentId} and m.id = v.id`;
+}
+
+/** Writes the play-order number. 0 means the match is still in the queue. */
+export async function persistMatchNumbers(tournamentId: string, matches: Match[]): Promise<void> {
+  if (matches.length === 0) return;
+  await sql`
+    update matches m
+    set match_number = v.match_number
+    from unnest(
+      ${toPgIntArray(matches.map((match) => match.id))}::int[],
+      ${toPgIntArray(matches.map((match) => match.matchNumber ?? 0))}::int[]
+    ) as v(id, match_number)
+    where m.tournament_id = ${tournamentId} and m.id = v.id`;
+}
+
+/** Start clock for matches that are on a court and have not started yet. */
+export async function persistOpenMatchStarts(tournamentId: string, at: Date): Promise<void> {
+  await sql`
+    update matches
+    set started_at = ${at}
+    where tournament_id = ${tournamentId}
+      and completed = false
+      and court > 0
+      and started_at is null
+  `;
 }

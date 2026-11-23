@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Tournament, getCourtNumbers, getRankedTeams, isTournamentComplete, normalizeCourtNumbers } from '@/lib/gameLogic';
+import { Tournament, formatSideNames, getCourtNumbers, getRankedTeams, isSinglesEvent, isTournamentComplete, normalizeCourtNumbers } from '@/lib/gameLogic';
+import PlayingTimeModal from '@/components/matches/PlayingTimeModal';
 
 interface TeamStandingsPanelProps {
   tournament: Tournament;
@@ -27,12 +28,14 @@ export default function TeamStandingsPanel({
   const [draftCourts, setDraftCourts] = useState<number[]>(currentCourts);
   const [savingCourts, setSavingCourts] = useState(false);
   const [courtError, setCourtError] = useState<string | null>(null);
+  const [showPlayingTime, setShowPlayingTime] = useState(false);
 
   useEffect(() => {
     setDraftCourts(currentCourts);
     setCourtError(null);
   }, [currentCourts.join('-')]);
 
+  const singles = isSinglesEvent(tournament.eventType);
   const getPlayerName = (playerId: number) =>
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
 
@@ -55,9 +58,11 @@ export default function TeamStandingsPanel({
 
   return (
     <div className={compact ? 'team-standings-panel team-standings-panel-compact' : 'team-standings-panel'}>
-      <h4 className="team-standings-title">Team Standings</h4>
+      <h4 className="team-standings-title">{singles ? 'Player Standings' : 'Team Standings'}</h4>
       <p className="team-standings-hint">
-        {onTeamSelect ? 'Click a team for match schedule' : 'Updates live as scores are entered'}
+        {onTeamSelect
+          ? `Click a ${singles ? 'player' : 'team'} for match schedule`
+          : 'Updates live as scores are entered'}
       </p>
       <div className="team-standings-list">
         {rankedTeams.map((team) => {
@@ -69,7 +74,7 @@ export default function TeamStandingsPanel({
               {!compact ? (
                 <div className="team-standings-players min-w-0">
                   <div className="team-standings-player truncate">
-                    {getPlayerName(team.player1Id)} & {getPlayerName(team.player2Id)}
+                    {formatSideNames(getPlayerName(team.player1Id), getPlayerName(team.player2Id))}
                   </div>
                 </div>
               ) : (
@@ -140,6 +145,10 @@ export default function TeamStandingsPanel({
         </div>
       )}
 
+      <button type="button" className="team-standings-playing-btn" onClick={() => setShowPlayingTime(true)}>
+        Playing Time
+      </button>
+
       {showFinalize && (
         <button type="button" onClick={onFinalize} className="team-standings-finalize-btn">
           Finalize Tournament
@@ -153,6 +162,10 @@ export default function TeamStandingsPanel({
       <Link href="/" className="team-standings-home-link">
         Return to Home
       </Link>
+
+      {showPlayingTime && (
+        <PlayingTimeModal tournament={tournament} onClose={() => setShowPlayingTime(false)} />
+      )}
     </div>
   );
 }

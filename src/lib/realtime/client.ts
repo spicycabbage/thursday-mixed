@@ -26,6 +26,7 @@ export function subscribeToTournament(
   handlers: {
     onSync: (tournament: Tournament) => void;
     onToast?: (payload: ScoreToastPayload) => void;
+    onStatus?: (live: boolean) => void;
   }
 ): () => void {
   const client = getBrowserClient();
@@ -45,9 +46,12 @@ export function subscribeToTournament(
         handlers.onToast?.(payload as ScoreToastPayload);
       }
     })
-    .subscribe();
+    .subscribe((status) => {
+      handlers.onStatus?.(status === 'SUBSCRIBED');
+    });
 
   return () => {
+    handlers.onStatus?.(false);
     client.removeChannel(channel);
   };
 }

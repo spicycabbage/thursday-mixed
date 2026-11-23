@@ -4,11 +4,11 @@ import { useEffect, useMemo, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { ChartBarIcon } from '@heroicons/react/24/outline';
 import { PageCard, PageContent, PageHeader, PageLoading, PageShell, PageTitleBlock } from '@/components/PageShell';
-import { EVENT_TYPE_LABELS, type EventType } from '@/lib/gameLogic';
+import { EVENT_TYPE_LABELS, formatSideNames, type EventType } from '@/lib/gameLogic';
 
 type AnalyticsTab = EventType | 'ALL';
 type StatSortKey = 'wins' | 'losses' | 'winPercentage';
-const ANALYTICS_TABS: AnalyticsTab[] = ['ALL', 'MD', 'WD', 'XD'];
+const ANALYTICS_TABS: AnalyticsTab[] = ['ALL', 'MD', 'WD', 'XD', 'MS', 'WS'];
 
 function statsCacheKey(tab: AnalyticsTab) {
   return `analytics:player-stats:${tab}`;
@@ -363,9 +363,11 @@ function AnalyticsContent() {
                           {match.tournamentName.trim() ? ` · ${match.tournamentName.trim()}` : ''}
                         </span>
                         <span className="team-summary-match-opponent">
-                          vs {match.opponent1} & {match.opponent2}
+                          vs {formatSideNames(match.opponent1, match.opponent2)}
                         </span>
-                        <span className="text-xs font-semibold text-gray-600">with {match.partner}</span>
+                        {match.partner ? (
+                          <span className="text-xs font-semibold text-gray-600">with {match.partner}</span>
+                        ) : null}
                       </div>
                       <div className="team-summary-match-result">
                         <span className="team-summary-match-score">

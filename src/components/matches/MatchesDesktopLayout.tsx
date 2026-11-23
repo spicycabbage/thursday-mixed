@@ -5,6 +5,10 @@ import {
   Tournament,
   Team,
   getDesktopSpotlightMatches,
+  orderPlayingNow,
+  buildQueueCards,
+  queuePlaceLabel,
+  type QueueCard,
   courtCountForTeams,
   getRankedTeams,
   isTournamentComplete,
@@ -13,6 +17,7 @@ import TeamStandingsPanel from '@/components/TeamStandingsPanel';
 import MatchCard from '@/components/matches/MatchCard';
 import WinnerCelebrationSpotlight from '@/components/matches/WinnerCelebrationSpotlight';
 import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
+import QueueExplainModal from '@/components/matches/QueueExplainModal';
 
 interface MatchesDesktopLayoutProps {
   tournament: Tournament;
@@ -35,6 +40,7 @@ export default function MatchesDesktopLayout({
 }: MatchesDesktopLayoutProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [modalMatchId, setModalMatchId] = useState<number | null>(null);
+  const [queueCard, setQueueCard] = useState<QueueCard | null>(null);
   const miniCarouselRef = useRef<HTMLDivElement>(null);
 
   const tournamentComplete = isTournamentComplete(tournament);
@@ -61,9 +67,17 @@ export default function MatchesDesktopLayout({
     () => getDesktopSpotlightMatches(sortedMatches, courtCount),
     [sortedMatches, courtCount]
   );
+  const playingNow = useMemo(() => orderPlayingNow(spotlightMatches), [spotlightMatches]);
+  const queueCards = useMemo(
+    () => buildQueueCards(tournament.matches, deferredMatches, courtCount),
+    [tournament.matches, deferredMatches, courtCount]
+  );
 
   const completedMatches = useMemo(
-    () => sortedMatches.filter((match) => match.completed),
+    () =>
+      sortedMatches
+        .filter((match) => match.completed)
+        .sort((a, b) => (a.matchNumber ?? a.id) - (b.matchNumber ?? b.id)),
     [sortedMatches]
   );
 
@@ -75,14 +89,15 @@ export default function MatchesDesktopLayout({
   const requestRequeue = useCallback(
     (matchId: number) => {
       if (!onRequeue || tournament.isFinalized) return;
+      const matchNumber = tournament.matches.find((match) => match.id === matchId)?.matchNumber;
       const confirmed = window.confirm(
-        `Requeue Match ${matchId}? The score will be cleared and it will go to the end of the queue.`
+        `Requeue ${matchNumber ? `Match ${matchNumber}` : 'this match'}? The score will be cleared and it will go to the end of the queue.`
       );
       if (!confirmed) return;
       onRequeue(matchId);
       setModalMatchId(null);
     },
-    [onRequeue, tournament.isFinalized]
+    [onRequeue, tournament.isFinalized, tournament.matches]
   );
 
   const handleModalScoreUpdate = useCallback(
@@ -95,7 +110,7 @@ export default function MatchesDesktopLayout({
 
   useEffect(() => {
     if (miniCarouselRef.current) miniCarouselRef.current.scrollLeft = 0;
-  }, [deferredMatches[0]?.id]);
+  }, [queueCards[0]?.match.id]);
 
   useEffect(() => {
     if (!modalMatchId) return;
@@ -107,11 +122,12 @@ export default function MatchesDesktopLayout({
   }, [modalMatchId]);
 
   const totalMatches = sortedMatches.length;
+  const latestNumber = sortedMatches.reduce((max, match) => Math.max(max, match.matchNumber ?? 0), 0);
   const progressLabel =
     completedCount === totalMatches
       ? `${totalMatches}/${totalMatches} complete`
-      : spotlightMatches[0]
-        ? `Match ${spotlightMatches[0].id} of ${totalMatches}`
+      : latestNumber > 0
+        ? `Match ${latestNumber} of ${totalMatches}`
         : `${completedCount}/${totalMatches} complete`;
 
   return (
@@ -127,8 +143,8 @@ export default function MatchesDesktopLayout({
             {tournamentComplete && podium.length > 0 ? (
               <WinnerCelebrationSpotlight tournament={tournament} podium={podium} />
             ) : (
-              <div className={`matches-spotlight-grid${spotlightMatches.length >= 3 ? ' matches-spotlight-grid-3' : ''}`}>
-                {spotlightMatches.map((match) => (
+              <div className={`matches-spotlight-grid${playingNow.length >= 3 ? ' matches-spotlight-grid-3' : ''}`}>
+                {playingNow.map((match) => (
                   <MatchCard
                     onUnsavedScoreChange={onUnsavedScoreChange}
                     key={match.id}
@@ -152,18 +168,20 @@ export default function MatchesDesktopLayout({
                 {tournamentComplete ? 'No more matches' : `${deferredMatches.length} left`}
               </span>
             </div>
-            {deferredMatches.length > 0 && (
+            {queueCards.length > 0 && (
               <div className="matches-mini-carousel" ref={miniCarouselRef}>
-                {deferredMatches.map((match) => (
-                  <div key={match.id} data-match-id={match.id} className="match-mini-wrap">
+                {queueCards.map((card) => (
+                  <div key={card.match.id} data-match-id={card.match.id} className="match-mini-wrap">
                     <MatchCard
-                    onUnsavedScoreChange={onUnsavedScoreChange}
-                      match={match}
+                      onUnsavedScoreChange={onUnsavedScoreChange}
+                      match={card.match}
                       tournament={tournament}
                       onScoreUpdate={onScoreUpdate}
                       variant="mini"
                       roster
                       labelMode="sequential"
+                      queueLabel={queuePlaceLabel(card.place)}
+                      onSelect={() => setQueueCard(card)}
                     />
                   </div>
                 ))}
@@ -214,6 +232,10 @@ export default function MatchesDesktopLayout({
         onClose={() => setSelectedTeamId(null)}
       />
 
+      {queueCard && (
+        <QueueExplainModal card={queueCard} tournament={tournament} onClose={() => setQueueCard(null)} />
+      )}
+
       {modalMatch && (
         <div
           className="match-edit-modal-backdrop"
@@ -229,7 +251,7 @@ export default function MatchesDesktopLayout({
           >
             <div className="match-edit-modal-header">
               <h3 id="match-edit-modal-title" className="match-edit-modal-title">
-                Match {modalMatch.id}
+                {modalMatch.matchNumber ? `Match ${modalMatch.matchNumber}` : 'Match'}
               </h3>
               <button
                 type="button"

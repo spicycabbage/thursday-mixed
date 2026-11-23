@@ -7,6 +7,7 @@ import type { ScoreToastPayload } from '@/lib/realtime/server';
 type LiveUpdateHandlers = {
   onSync: (tournament: Tournament) => void;
   onToast?: (payload: ScoreToastPayload) => void;
+  onStatus?: (live: boolean) => void;
 };
 
 export function subscribeLiveTournament(

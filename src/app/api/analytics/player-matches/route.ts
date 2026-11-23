@@ -40,9 +40,9 @@ export async function GET(request: NextRequest) {
       tournament_name: string;
       event_type: string;
       round: number;
-      partner: string;
+      partner: string | null;
       opponent1: string;
-      opponent2: string;
+      opponent2: string | null;
       player_score: number;
       opponent_score: number;
       won: boolean;
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
       JOIN players p ON p.tournament_id = m.tournament_id
         AND lower(trim(p.name)) = ${key}
         AND p.id IN (m.team_a_p1, m.team_a_p2, m.team_b_p1, m.team_b_p2)
-      JOIN players partner ON partner.tournament_id = m.tournament_id
+      LEFT JOIN players partner ON partner.tournament_id = m.tournament_id
         AND partner.id = CASE
           WHEN p.id = m.team_a_p1 THEN m.team_a_p2
           WHEN p.id = m.team_a_p2 THEN m.team_a_p1
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
           WHEN p.id = m.team_a_p1 OR p.id = m.team_a_p2 THEN m.team_b_p1
           ELSE m.team_a_p1
         END
-      JOIN players opp2 ON opp2.tournament_id = m.tournament_id
+      LEFT JOIN players opp2 ON opp2.tournament_id = m.tournament_id
         AND opp2.id = CASE
           WHEN p.id = m.team_a_p1 OR p.id = m.team_a_p2 THEN m.team_b_p2
           ELSE m.team_a_p2
@@ -103,9 +103,9 @@ export async function GET(request: NextRequest) {
       tournamentName: row.tournament_name ?? '',
       eventType: row.event_type ?? 'XD',
       round: row.round,
-      partner: row.partner,
+      partner: row.partner ?? '',
       opponent1: row.opponent1,
-      opponent2: row.opponent2,
+      opponent2: row.opponent2 ?? '',
       playerScore: row.player_score,
       opponentScore: row.opponent_score,
       won: row.won,

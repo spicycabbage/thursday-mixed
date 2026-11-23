@@ -16,7 +16,9 @@ function createSqlClient() {
 
   return postgres(databaseUrl, {
     ssl: 'require',
-    max: 1,
+    // Fluid Compute serves concurrent requests from one instance; a single
+    // connection makes every poll queue behind the slowest write.
+    max: 4,
     idle_timeout: 20,
     max_lifetime: 60 * 5,
     connect_timeout: 8,
@@ -67,6 +69,9 @@ create table if not exists matches (
 );
 alter table matches add column if not exists winner_team text;
 alter table matches add column if not exists queue_order int not null default 0;
+alter table matches add column if not exists finish_order int not null default 0;
+alter table matches add column if not exists streak_a int not null default 0;
+alter table matches add column if not exists streak_b int not null default 0;
 alter table matches add column if not exists court int not null default 1;
 alter table matches add column if not exists team_a_id int not null default 1;
 alter table matches add column if not exists team_b_id int not null default 2;
@@ -89,7 +94,14 @@ const TOURNAMENT_META_SQL = `
 alter table tournaments add column if not exists event_type text not null default 'XD';
 alter table tournaments add column if not exists name text not null default '';
 alter table matches add column if not exists queue_order int not null default 0;
+alter table matches add column if not exists finish_order int not null default 0;
+alter table matches add column if not exists streak_a int not null default 0;
+alter table matches add column if not exists streak_b int not null default 0;
 alter table tournaments add column if not exists court_numbers int[];
+alter table tournaments add column if not exists started_at timestamptz;
+alter table matches add column if not exists started_at timestamptz;
+alter table matches add column if not exists ended_at timestamptz;
+alter table matches add column if not exists match_number int not null default 0;
 `;
 
 let metaReady: Promise<void> | null = null;
@@ -109,9 +121,43 @@ async function runStatements(sqlText: string): Promise<void> {
   }
 }
 
+const META_COLUMN_COUNT = 11;
+
+// ALTER TABLE takes an ACCESS EXCLUSIVE lock even when the column already exists,
+// so cold starts check the catalog first and only migrate when something is missing.
+// Keep the column list in sync with TOURNAMENT_META_SQL.
+async function schemaState(): Promise<{ schemaOk: boolean; metaOk: boolean }> {
+  const [row] = await sql<{ schema_ok: boolean; meta_cols: number }[]>`
+    select
+      to_regclass('public.idx_tournaments_finalized_date') is not null as schema_ok,
+      (
+        select count(*)::int
+        from information_schema.columns
+        where table_schema = 'public'
+          and (table_name, column_name) in (
+            ('tournaments', 'event_type'),
+            ('tournaments', 'name'),
+            ('tournaments', 'court_numbers'),
+            ('matches', 'queue_order'),
+            ('matches', 'finish_order'),
+            ('matches', 'streak_a'),
+            ('matches', 'streak_b'),
+            ('tournaments', 'started_at'),
+            ('matches', 'started_at'),
+            ('matches', 'ended_at'),
+            ('matches', 'match_number')
+          )
+      ) as meta_cols
+  `;
+  const metaOk = Number(row?.meta_cols ?? 0) === META_COLUMN_COUNT;
+  return { schemaOk: !!row?.schema_ok && metaOk, metaOk };
+}
+
 export function ensureTournamentMeta(): Promise<void> {
   if (metaReady) return metaReady;
-  metaReady = runStatements(TOURNAMENT_META_SQL).then(
+  metaReady = schemaState()
+    .then(({ metaOk }) => (metaOk ? undefined : runStatements(TOURNAMENT_META_SQL)))
+    .then(
     () => undefined,
     (error: unknown) => {
       metaReady = null;
@@ -123,7 +169,13 @@ export function ensureTournamentMeta(): Promise<void> {
 
 export function ensureSchema(): Promise<void> {
   if (schemaReady) return schemaReady;
-  schemaReady = runStatements(SCHEMA_SQL).then(
+  schemaReady = schemaState()
+    .then(async ({ schemaOk }) => {
+      if (schemaOk) return;
+      await runStatements(SCHEMA_SQL);
+      await runStatements(TOURNAMENT_META_SQL);
+    })
+    .then(
     () => undefined,
     (error: unknown) => {
       schemaReady = null;
@@ -143,4 +195,5 @@ export type DbTournamentRow = {
   is_finalized: boolean;
   created_at: string;
   court_numbers?: number[] | null;
+  started_at?: string | Date | null;
 };

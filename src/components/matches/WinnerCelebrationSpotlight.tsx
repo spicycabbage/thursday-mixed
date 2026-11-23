@@ -128,7 +128,9 @@ function WinnerCard({
       <div className="team-standings-badge">{team.label}</div>
       <div className="team-standings-players min-w-0">
         <div className="team-standings-player truncate">{getPlayerName(team.player1Id)}</div>
-        <div className="team-standings-player truncate">{getPlayerName(team.player2Id)}</div>
+        {getPlayerName(team.player2Id) ? (
+          <div className="team-standings-player truncate">{getPlayerName(team.player2Id)}</div>
+        ) : null}
       </div>
       <div className="team-standings-record">
         {team.wins}-{team.losses}

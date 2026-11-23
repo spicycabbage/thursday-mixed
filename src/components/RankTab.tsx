@@ -2,8 +2,10 @@
 import Link from 'next/link';
 import {
   Tournament,
+  formatSideNames,
   getRankedTeams,
   getRankedPlayers,
+  isSinglesEvent,
   isTournamentComplete,
 } from '@/lib/gameLogic';
 import { ChartBarIcon } from '@heroicons/react/24/outline';
@@ -74,17 +76,22 @@ export default function RankTab({
 
   const subtitle = isComplete ? 'Complete' : `Round ${tournament.currentRound}`;
 
+  const singles = isSinglesEvent(tournament.eventType);
   const standings = (
     <>
-      <h4 className="tab-section-title">Team Standings</h4>
+      <h4 className="tab-section-title">{singles ? 'Player Standings' : 'Team Standings'}</h4>
       <div className="space-y-3">
         {rankedTeams.map((team) => {
-          const players = `${getPlayerName(team.player1Id)} & ${getPlayerName(team.player2Id)}`;
+          const players = formatSideNames(getPlayerName(team.player1Id), getPlayerName(team.player2Id));
           return (
             <RankEntry
               key={team.id}
               badge={team.label}
-              title={embedded ? `#${team.rank} ${players}` : `#${team.rank} Team ${team.label}`}
+              title={
+                embedded
+                  ? `#${team.rank} ${players}`
+                  : `#${team.rank} ${singles ? 'Player' : 'Team'} ${team.label}`
+              }
               subtitle={embedded ? undefined : players}
               record={`${team.wins}-${team.losses}`}
               points={`${team.pointDiff > 0 ? '+' : ''}${team.pointDiff} pts`}
@@ -95,7 +102,7 @@ export default function RankTab({
         })}
       </div>
 
-      {!embedded && (
+      {!embedded && !singles && (
         <>
           <h4 className="tab-section-title mt-6">Individual Records</h4>
           <div className="space-y-3">

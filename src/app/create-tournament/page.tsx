@@ -8,6 +8,7 @@ import { PageCard, PageContent, PageHeader, PageLoading, PageShell } from '@/com
 import {
   EVENT_TYPES,
   EVENT_TYPE_LABELS,
+  isSinglesEvent,
   TEAM_LABELS,
   TEAM_COUNTS,
   canonicalName,
@@ -32,7 +33,7 @@ export default function CreateTournamentPage() {
   const router = useRouter();
   const [tournamentDate, setTournamentDate] = useState('');
   const [tournamentName, setTournamentName] = useState('');
-  const [eventType, setEventType] = useState<EventType>('XD');
+  const [eventType, setEventType] = useState<EventType>('MD');
   const [teamCount, setTeamCount] = useState<TeamCount>(6);
   const [teams, setTeams] = useState<TeamInput[]>(
     Array.from({ length: 6 }, () => ({ player1: '', player2: '' }))
@@ -136,6 +137,18 @@ export default function CreateTournamentPage() {
     return [...starts, ...contains].slice(0, 6);
   };
 
+  const singles = isSinglesEvent(eventType);
+  const namesPerEntry = singles ? 1 : 2;
+  const entryNouns = singles ? 'players' : 'teams';
+
+  const selectEventType = (type: EventType) => {
+    setEventType(type);
+    if (isSinglesEvent(type)) {
+      setTeams((current) => current.map((team) => ({ ...team, player2: '' })));
+      setSuggestions((current) => current.map((row) => [row[0] ?? [], []]));
+    }
+  };
+
   const handlePlayerChange = (teamIndex: number, slot: 0 | 1, value: string) => {
     const limited = value.slice(0, 24);
     const newTeams = [...teams];
@@ -157,11 +170,11 @@ export default function CreateTournamentPage() {
   };
 
   const handleStartTournament = async () => {
-    if (filledCount !== teamCount * 2 || isCreating) return;
+    if (filledCount !== teamCount * namesPerEntry || isCreating) return;
     setIsCreating(true);
     const normalizedTeams = teams.map((team) => ({
       player1: normalizeName(team.player1),
-      player2: normalizeName(team.player2),
+      player2: singles ? '' : normalizeName(team.player2),
     }));
     try {
       const res = await fetch('/api/tournaments', {
@@ -202,7 +215,7 @@ export default function CreateTournamentPage() {
   };
 
   const focusNextPlayerInput = (teamIndex: number, slot: 0 | 1) => {
-    if (slot === 0) {
+    if (!singles && slot === 0) {
       focusPlayerInput(teamIndex, 1);
       return;
     }
@@ -228,11 +241,14 @@ export default function CreateTournamentPage() {
     focusNextPlayerInput(teamIndex, slot);
   };
 
-  const enteredNames = teams.flatMap((team) => [team.player1, team.player2]);
+  const enteredNames = teams.flatMap((team) =>
+    singles ? [team.player1] : [team.player1, team.player2]
+  );
   const duplicateKeys = duplicateNameKeys(enteredNames);
   const normalizedCourts = normalizeCourtNumbers(courtNumbers, teamCount);
+  const requiredNames = teamCount * namesPerEntry;
   const isStartDisabled =
-    filledCount < teamCount * 2 || duplicateKeys.length > 0 || !normalizedCourts;
+    filledCount < requiredNames || duplicateKeys.length > 0 || !normalizedCourts;
   const lastLabel = TEAM_LABELS[teamCount - 1];
 
   if (adminGate === 'loading') {
@@ -262,7 +278,7 @@ export default function CreateTournamentPage() {
           icon={<UserGroupIcon className="w-5 h-5" />}
           right={
             <div className="text-sm text-gray-600 shrink-0 ml-2">
-              <span className="font-semibold">{filledCount}/{teamCount * 2}</span>
+              <span className="font-semibold">{filledCount}/{requiredNames}</span>
             </div>
           }
         />
@@ -270,12 +286,12 @@ export default function CreateTournamentPage() {
         <div className="registration-toolbar page-section-divider px-4 py-4">
           <div className="mb-4">
             <label className="app-label mb-1">Event</label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {EVENT_TYPES.map((type) => (
                 <button
                   key={type}
                   type="button"
-                  onClick={() => setEventType(type)}
+                  onClick={() => selectEventType(type)}
                   className={`rounded-lg border-2 px-3 py-2 text-left ${
                     eventType === type
                       ? 'border-blue-900 bg-blue-600 text-white'
@@ -311,7 +327,7 @@ export default function CreateTournamentPage() {
           </div>
           <div className="registration-toolbar-inner">
             <div>
-              <label className="app-label mb-1">Teams</label>
+              <label className="app-label mb-1">{singles ? 'Players' : 'Teams'}</label>
               <div className="flex gap-2">
                 {TEAM_COUNTS.map((count) => (
                   <button
@@ -324,7 +340,9 @@ export default function CreateTournamentPage() {
                         : 'border-slate-700 bg-white text-slate-900'
                     }`}
                   >
-                    <span className="block text-sm font-bold">{count} teams</span>
+                    <span className="block text-sm font-bold">
+                      {count} {entryNouns}
+                    </span>
                     <span
                       className={`block text-xs font-semibold ${
                         teamCount === count ? 'text-blue-100' : 'text-slate-700'
@@ -376,7 +394,8 @@ export default function CreateTournamentPage() {
 
         <PageContent className="registration-page-content">
           <p className="page-subtitle text-center mb-4 md:text-left md:mb-6">
-            Register {teamCount} teams (A–{lastLabel}), 2 players each. {matchCountForTeams(teamCount)} games, round robin on {courtCountForTeams(teamCount)} courts.
+            Register {teamCount} {entryNouns} (A–{lastLabel})
+            {singles ? '' : ', 2 players each'}. {matchCountForTeams(teamCount)} games, round robin on {courtCountForTeams(teamCount)} courts.
           </p>
 
           <div className="registration-teams-grid">
@@ -386,10 +405,12 @@ export default function CreateTournamentPage() {
                   <div className="registration-team-badge player-button flex items-center justify-center mr-2 text-sm font-bold">
                     {TEAM_LABELS[teamIndex]}
                   </div>
-                  <span className="registration-team-label font-semibold text-gray-700">Team {TEAM_LABELS[teamIndex]}</span>
+                  <span className="registration-team-label font-semibold text-gray-700">
+                    {singles ? 'Player' : 'Team'} {TEAM_LABELS[teamIndex]}
+                  </span>
                 </div>
                 <div className="registration-team-fields">
-                  {([0, 1] as const).map((slot) => (
+                  {(singles ? ([0] as const) : ([0, 1] as const)).map((slot) => (
                     <div key={slot} className="relative">
                       <input
                         type="text"
@@ -416,7 +437,7 @@ export default function CreateTournamentPage() {
                             setSuggestions(newSuggestions);
                           }, 150);
                         }}
-                        placeholder={`Player ${slot + 1}`}
+                        placeholder={singles ? 'Player name' : `Player ${slot + 1}`}
                         className={`app-input ${
                           duplicateKeys.includes(nameKey(slot === 0 ? team.player1 : team.player2))
                             ? '!border-red-500'

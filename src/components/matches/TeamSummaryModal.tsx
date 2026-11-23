@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Tournament, getTeamMatchSummaries } from '@/lib/gameLogic';
+import { Tournament, formatSideNames, getTeamMatchSummaries, isSinglesEvent } from '@/lib/gameLogic';
 
 interface TeamSummaryModalProps {
   tournament: Tournament;
@@ -23,7 +23,7 @@ export default function TeamSummaryModal({
   const opponentNames = (opponentTeamId: number) => {
     const opponent = tournament.teams.find((entry) => entry.id === opponentTeamId);
     if (!opponent) return 'Unknown';
-    return `${getPlayerName(opponent.player1Id)} & ${getPlayerName(opponent.player2Id)}`;
+    return formatSideNames(getPlayerName(opponent.player1Id), getPlayerName(opponent.player2Id));
   };
 
   useEffect(() => {
@@ -53,10 +53,10 @@ export default function TeamSummaryModal({
         <div className="match-edit-modal-header">
           <div className="min-w-0">
             <h3 id="team-summary-modal-title" className="match-edit-modal-title">
-              Team {team.label}
+              {isSinglesEvent(tournament.eventType) ? 'Player' : 'Team'} {team.label}
             </h3>
             <p className="team-summary-modal-players">
-              {getPlayerName(team.player1Id)} & {getPlayerName(team.player2Id)}
+              {formatSideNames(getPlayerName(team.player1Id), getPlayerName(team.player2Id))}
             </p>
           </div>
           <button

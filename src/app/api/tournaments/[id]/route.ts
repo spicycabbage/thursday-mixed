@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { ADMIN_COOKIE, adminSecret, hasAdminCookie } from '@/lib/adminAuth';
 import { sql } from '@/lib/db';
-import { assembleTournament, persistMatchCourts } from '@/lib/tournamentRepo';
+import { assembleTournament, persistMatchCourts, snapshotMatchCourts } from '@/lib/tournamentRepo';
 import { normalizeCourtNumbers, relabelCourtNumbers, toPgIntArray } from '@/lib/gameLogic';
 import { broadcastTournamentUpdate } from '@/lib/realtime/server';
 
@@ -57,12 +57,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Enter a unique court number for each court' }, { status: 400 });
     }
 
+    const before = snapshotMatchCourts(tournament.matches);
     relabelCourtNumbers(tournament, courtNumbers);
     await sql`update tournaments set court_numbers = ${toPgIntArray(courtNumbers)}::int[] where id = ${id}`;
-    await persistMatchCourts(id, tournament.matches);
+    await persistMatchCourts(id, tournament.matches, before);
 
     const updated = await assembleTournament(id);
-    if (updated) await broadcastTournamentUpdate(id, updated);
+    if (updated) after(() => broadcastTournamentUpdate(id, updated));
     return NextResponse.json(updated);
   } catch (e: any) {
     return NextResponse.json({ error: e.message || 'Server error' }, { status: 500 });
