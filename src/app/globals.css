@@ -2153,10 +2153,20 @@ input[type="number"]::-webkit-inner-spin-button {
     width: 100%;
   }
 
+  .playing-time-chart-fit {
+    width: 100%;
+    overflow: hidden;
+  }
+
   .playing-time-chart {
     display: block;
     height: auto;
     max-width: none;
+  }
+
+  .playing-time-chart-fit .playing-time-chart {
+    width: 100%;
+    max-width: 100%;
   }
 
   .playing-time-legend {
@@ -2202,6 +2212,12 @@ input[type="number"]::-webkit-inner-spin-button {
 
   .playing-time-bar-label {
     fill: #1f2937;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .playing-time-break-label {
+    fill: #fff;
     font-size: 12px;
     font-weight: 700;
   }

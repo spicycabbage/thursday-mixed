@@ -507,8 +507,6 @@ export default function TournamentScreen({
                 onScoreUpdate={handleScoreUpdate}
                 onRequeue={handleRequeue}
                 onFinalize={handleFinalizeTournament}
-                canEditCourts={isAdmin}
-                onSaveCourtNumbers={handleSaveCourtNumbers}
                 onUnsavedScoreChange={handleUnsavedScoreChange}
               />
             </div>
@@ -562,6 +560,8 @@ export default function TournamentScreen({
                 layout="desktop"
                 autoEdit={isPlayersEditable && !tournament.isFinalized}
                 onClose={() => setShowPlayersModal(false)}
+                canEditCourts={isAdmin}
+                onSaveCourtNumbers={handleSaveCourtNumbers}
               />
             </div>
           </div>

@@ -1,5 +1,5 @@
-import { createTournament, startTournament, updateMatchScore } from '../gameLogic';
-import { BREAK_COLOR, buildCourtTimeline, buildTeamRows, formatAxisClock, formatMatchWindow, teamColor, timelineAxis } from '../matchClock';
+import { createTournament, getTeamLabel, startTournament, updateMatchScore } from '../gameLogic';
+import { BREAK_COLOR, axisLabelTicks, buildCourtTimeline, buildTeamRows, formatAxisClock, formatMatchWindow, teamColor, timelineAxis } from '../matchClock';
 
 const sampleTeams = [
   { player1: 'Alice', player2: 'Amy' },
@@ -109,6 +109,17 @@ describe('match clock display', () => {
     const at228 = timelineAxis(new Date(2026, 10, 23, 2, 28, 0, 0).getTime(), end);
     expect(formatAxisClock(at228.startMs)).toBe('2:28');
     expect(at228.ticks.map((tick) => formatAxisClock(tick))).toEqual(['2:40', '2:50', '3:00']);
+
+    const end322 = new Date(2026, 10, 23, 3, 22, 0, 0).getTime();
+    const until322 = timelineAxis(new Date(2026, 10, 23, 2, 24, 0, 0).getTime(), end322);
+    expect(formatAxisClock(until322.endMs)).toBe('3:22');
+    expect(axisLabelTicks(until322.ticks, until322.endMs).map((tick) => formatAxisClock(tick))).toEqual([
+      '2:30',
+      '2:40',
+      '2:50',
+      '3:00',
+      '3:10',
+    ]);
   });
 
   it('charts each team and fills the gaps with breaks', () => {
@@ -123,12 +134,22 @@ describe('match clock display', () => {
     const rows = buildTeamRows(tournament, timeline!);
     expect(rows).toHaveLength(tournament.teams.length);
     const rested = rows.find((row) => row.teamId === finished.teamAId);
+    expect(rested?.label).toBe(getTeamLabel(finished.teamAId));
     expect(rested?.segments.map((segment) => segment.kind)).toEqual(['play', 'break']);
+    expect(rested?.segments.find((segment) => segment.kind === 'break')?.counted).toBe(true);
+    expect(rested?.segments.find((segment) => segment.kind === 'play')?.opponent).toBe(getTeamLabel(finished.teamBId));
     const playingIds = new Set(
       tournament.matches.filter((match) => match.court > 0 && !match.endedAt).flatMap((match) => [match.teamAId, match.teamBId])
     );
     const waiting = rows.find((row) => !playingIds.has(row.teamId) && row.teamId !== finished.teamAId && row.teamId !== finished.teamBId);
     expect(waiting?.segments.map((segment) => segment.kind)).toEqual(['break']);
+    expect(waiting?.segments[0]?.counted).toBe(false);
+    for (const match of tournament.matches) {
+      if (match.teamAId === finished.teamAId || match.teamBId === finished.teamAId) match.completed = true;
+    }
+    const doneRows = buildTeamRows(tournament, buildCourtTimeline(tournament, Date.now())!);
+    const done = doneRows.find((row) => row.teamId === finished.teamAId);
+    expect(done?.segments.find((segment) => segment.kind === 'break')?.counted).toBe(false);
     expect(BREAK_COLOR).toBe('#111111');
     jest.useRealTimers();
   });

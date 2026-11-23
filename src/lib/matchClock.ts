@@ -1,5 +1,5 @@
 import type { Tournament } from './gameLogic';
-import { formatSideNames, getCourtNumbers } from './gameLogic';
+import { formatSideNames, getCourtNumbers, getTeamLabel } from './gameLogic';
 
 export const TEAM_COLORS = [
   '#6ea8fe',
@@ -186,10 +186,15 @@ export interface TeamTimeSegment {
   endMs: number;
   kind: 'play' | 'break';
   live: boolean;
+  /** Opponent team letter while playing. Empty on a break. */
+  opponent: string;
+  /** False unless a game sits on both sides. That bar is 0 and stays out of the total. */
+  counted: boolean;
 }
 
 export interface TeamTimeRow {
   teamId: number;
+  label: string;
   names: string;
   segments: TeamTimeSegment[];
 }
@@ -204,36 +209,77 @@ export function buildTeamRows(tournament: Tournament, timeline: CourtTimeline): 
   return [...tournament.teams]
     .sort((a, b) => a.id - b.id)
     .map((team) => {
-      const plays = mergePlays(timeline.bars.filter((bar) => bar.teamId === team.id));
+      const plays = mergePlays(
+        timeline.bars.filter((bar) => bar.teamId === team.id),
+        (bar) => opponentLabel(bar, timeline.bars)
+      );
+      const matchComing = tournament.matches.some(
+        (match) =>
+          (match.teamAId === team.id || match.teamBId === team.id) && !match.completed && !match.startedAt
+      );
       const segments: TeamTimeSegment[] = [];
       let cursor = timeline.originMs;
       for (const play of plays) {
         const start = Math.max(play.startMs, timeline.originMs);
         const end = Math.min(play.endMs, timeline.endMs);
-        if (start > cursor) segments.push({ startMs: cursor, endMs: start, kind: 'break', live: false });
-        if (end > start) segments.push({ startMs: start, endMs: end, kind: 'play', live: play.live });
+        if (start > cursor) {
+          const playedAlready = segments.some((segment) => segment.kind === 'play');
+          segments.push({
+            startMs: cursor,
+            endMs: start,
+            kind: 'break',
+            live: false,
+            opponent: '',
+            counted: playedAlready,
+          });
+        }
+        if (end > start) {
+          segments.push({ startMs: start, endMs: end, kind: 'play', live: play.live, opponent: play.opponent, counted: true });
+        }
         cursor = Math.max(cursor, end);
       }
-      if (timeline.endMs > cursor) segments.push({ startMs: cursor, endMs: timeline.endMs, kind: 'break', live: false });
+      if (timeline.endMs > cursor) {
+        segments.push({
+          startMs: cursor,
+          endMs: timeline.endMs,
+          kind: 'break',
+          live: false,
+          opponent: '',
+          counted: segments.some((segment) => segment.kind === 'play') && matchComing,
+        });
+      }
       return {
         teamId: team.id,
+        label: team.label,
         names: formatSideNames(nameOf(team.player1Id), nameOf(team.player2Id)),
         segments,
       };
     });
 }
 
-function mergePlays(bars: CourtTimeBar[]): { startMs: number; endMs: number; live: boolean }[] {
+function opponentLabel(bar: CourtTimeBar, bars: CourtTimeBar[]): string {
+  const other = bars.find((candidate) => candidate.matchId === bar.matchId && candidate.teamId !== bar.teamId);
+  return other ? getTeamLabel(other.teamId) : '';
+}
+
+function mergePlays(
+  bars: CourtTimeBar[],
+  opponentOf: (bar: CourtTimeBar) => string
+): { startMs: number; endMs: number; live: boolean; opponent: string }[] {
   const sorted = [...bars].sort((a, b) => a.startMs - b.startMs || a.matchId - b.matchId);
-  const merged: { startMs: number; endMs: number; live: boolean }[] = [];
+  const merged: { startMs: number; endMs: number; live: boolean; opponent: string }[] = [];
   for (const bar of sorted) {
+    const opponent = opponentOf(bar);
     const last = merged[merged.length - 1];
     if (last && bar.startMs <= last.endMs) {
       last.endMs = Math.max(last.endMs, bar.endMs);
       last.live = last.live || bar.live;
+      if (opponent && !last.opponent.split(' ').includes(opponent)) {
+        last.opponent = last.opponent ? `${last.opponent} ${opponent}` : opponent;
+      }
       continue;
     }
-    merged.push({ startMs: bar.startMs, endMs: bar.endMs, live: bar.live });
+    merged.push({ startMs: bar.startMs, endMs: bar.endMs, live: bar.live, opponent });
   }
   return merged;
 }
@@ -288,4 +334,9 @@ export function timelineAxis(originMs: number, endMs: number): { startMs: number
     cursor.setMinutes(cursor.getMinutes() + AXIS_STEP_MINUTES);
   }
   return { startMs, endMs: alignedEnd, ticks };
+}
+
+/** Tick labels that still have 3 minutes of room before the end label. */
+export function axisLabelTicks(ticks: number[], endMs: number): number[] {
+  return ticks.filter((tick) => endMs - tick >= AXIS_MIN_GAP_MS);
 }
