@@ -40,6 +40,7 @@ export default function PlayingTimeModal({ tournament, onClose }: PlayingTimeMod
 
   const timeline = useMemo(() => buildCourtTimeline(tournament, now), [tournament, now]);
   const teamRows = useMemo(() => (timeline ? buildTeamRows(tournament, timeline) : []), [tournament, timeline]);
+  const longest = useMemo(() => longestBreak(teamRows), [teamRows]);
 
   return (
     <div className="playing-time-backdrop" role="presentation" onClick={onClose}>
@@ -51,15 +52,26 @@ export default function PlayingTimeModal({ tournament, onClose }: PlayingTimeMod
         onClick={(event) => event.stopPropagation()}
       >
         <div className="playing-time-header">
-          <div>
+          <div className="min-w-0">
             <h3 id="playing-time-title" className="playing-time-title">
               Playing Time
             </h3>
+            <p className="playing-time-subtitle">Black bars are breaks between games. Letters show the opponent.</p>
           </div>
           <button type="button" className="playing-time-close" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
+        {timeline && (
+          <div className="playing-time-stats">
+            <PlayingTimeStat label="Started" value={formatClock(new Date(timeline.originMs).toISOString())} />
+            <PlayingTimeStat label="Elapsed" value={formatElapsed(timeline.endMs - timeline.originMs)} />
+            <PlayingTimeStat
+              label="Longest break"
+              value={longest ? `${formatBreakTotal(longest.seconds)} · ${longest.label}` : '—'}
+            />
+          </div>
+        )}
         <div className="playing-time-body">
           {!timeline ? (
             <p className="playing-time-empty">Hit Start to begin the clock. Matches land on the chart as they go on court.</p>
@@ -68,6 +80,15 @@ export default function PlayingTimeModal({ tournament, onClose }: PlayingTimeMod
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PlayingTimeStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="playing-time-stat">
+      <span className="playing-time-stat-label">{label}</span>
+      <span className="playing-time-stat-value">{value}</span>
     </div>
   );
 }
@@ -84,78 +105,139 @@ function rowBreakSeconds(row: TeamTimeRow): number {
   );
 }
 
+function longestBreak(rows: TeamTimeRow[]): { seconds: number; label: string } | null {
+  let best: { seconds: number; label: string } | null = null;
+  for (const row of rows) {
+    for (const segment of row.segments) {
+      if (segment.kind !== 'break' || !segment.counted) continue;
+      const seconds = breakSeconds(segment.startMs, segment.endMs);
+      if (seconds > 0 && (!best || seconds > best.seconds)) best = { seconds, label: row.label };
+    }
+  }
+  return best;
+}
+
 function formatBreakTotal(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
+function formatElapsed(ms: number): string {
+  const minutes = Math.max(0, Math.floor(ms / 60000));
+  const hours = Math.floor(minutes / 60);
+  return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
+}
+
+/** Drawn at the container's real pixel width so labels stay full size. */
+function useChartWidth(fallback: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(fallback);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const update = () => setWidth(Math.max(480, Math.floor(node.clientWidth)));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, width };
+}
+
 function TeamChart({ timeline, rows }: { timeline: CourtTimeline; rows: TeamTimeRow[] }) {
-  const labelW = 210;
-  const totalW = 88;
-  const top = 22;
-  const rowH = 44;
+  const { ref, width } = useChartWidth(960);
+  const labelW = 196;
+  const totalW = 92;
+  const plotGap = 12;
+  const headerH = 22;
+  const rowH = 40;
   const laneH = 26;
-  const rowPad = 9;
-  const axisH = 36;
+  const axisH = 34;
+  const plotX = labelW;
+  const plotW = Math.max(200, width - labelW - totalW - plotGap);
+  const totalX = plotX + plotW + plotGap;
+  const height = headerH + rows.length * rowH + axisH;
   const axis = timelineAxis(timeline.originMs, timeline.endMs);
-  const slots = Math.max(1, (axis.endMs - axis.startMs) / (5 * 60 * 1000));
-  const plotW = Math.max(640, slots * 72);
-  const width = labelW + plotW + totalW;
-  const height = top + rows.length * rowH + axisH;
   const span = Math.max(axis.endMs - axis.startMs, 1);
-  const xOf = (ms: number) => labelW + ((Math.min(Math.max(ms, axis.startMs), axis.endMs) - axis.startMs) / span) * plotW;
+  const xOf = (ms: number) => plotX + ((Math.min(Math.max(ms, axis.startMs), axis.endMs) - axis.startMs) / span) * plotW;
+  const laneTop = (rowIndex: number) => headerH + rowIndex * rowH + (rowH - laneH) / 2;
+  const plotBottom = headerH + rows.length * rowH;
+  const maxTotal = Math.max(0, ...rows.map(rowBreakSeconds));
 
   return (
-    <div className="playing-time-chart-fit">
+    <div ref={ref} className="playing-time-chart-fit">
       <svg
         className="playing-time-chart"
+        width={width}
+        height={height}
         viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="xMinYMin meet"
         role="img"
         aria-label="Playing time by team. Each row is a team. Bars show the opponent. Break bars show seconds."
       >
-        <text x={width - 8} y={14} textAnchor="end" className="playing-time-tick">
-          Break
+        <text x={0} y={14} className="playing-time-col-head">
+          Team
         </text>
-        <clipPath id="playing-time-team-labels">
-          <rect x={0} y={0} width={labelW - 8} height={height} />
-        </clipPath>
+        <text x={totalX + totalW / 2} y={14} textAnchor="middle" className="playing-time-col-head">
+          Total break
+        </text>
+
         {rows.map((row, index) => {
-          const y = top + index * rowH + rowPad;
-          const rowLabel = `${row.label} ${row.names}`.trim();
+          const rowTop = headerH + index * rowH;
+          const y = laneTop(index);
+          const total = rowBreakSeconds(row);
+          const clipId = `playing-time-name-${row.teamId}`;
           return (
             <g key={row.teamId}>
-              <rect x={labelW} y={y} width={plotW} height={laneH} className="playing-time-lane" />
+              {index % 2 === 0 && (
+                <rect x={0} y={rowTop} width={width} height={rowH} rx={8} className="playing-time-row-stripe" />
+              )}
+              <rect x={8} y={y} width={laneH} height={laneH} rx={6} className="playing-time-badge" />
+              <text x={8 + laneH / 2} y={y + laneH / 2 + 4} textAnchor="middle" className="playing-time-badge-text">
+                {row.label}
+              </text>
+              <clipPath id={clipId}>
+                <rect x={8 + laneH + 8} y={rowTop} width={labelW - laneH - 28} height={rowH} />
+              </clipPath>
               <text
-                x={8}
+                x={8 + laneH + 8}
                 y={y + laneH / 2 + 4}
-                textAnchor="start"
-                className="playing-time-court"
-                clipPath="url(#playing-time-team-labels)"
+                className="playing-time-names"
+                clipPath={`url(#${clipId})`}
               >
-                {rowLabel}
+                {row.names}
               </text>
-              <text x={width - 8} y={y + laneH / 2 + 4} textAnchor="end" className="playing-time-court">
-                {formatBreakTotal(rowBreakSeconds(row))}
+              <rect x={plotX} y={y} width={plotW} height={laneH} rx={laneH / 2} className="playing-time-lane" />
+              <rect
+                x={totalX + 6}
+                y={y}
+                width={totalW - 12}
+                height={laneH}
+                rx={laneH / 2}
+                className={total > 0 && total === maxTotal ? 'playing-time-total is-max' : 'playing-time-total'}
+              />
+              <text x={totalX + totalW / 2} y={y + laneH / 2 + 4} textAnchor="middle" className="playing-time-total-text">
+                {formatBreakTotal(total)}
               </text>
-              <title>{rowLabel}</title>
+              <title>{`${row.label} ${row.names}`.trim()}</title>
             </g>
           );
         })}
+
         {axis.ticks.map((tick) => (
           <line
             key={tick}
             x1={xOf(tick)}
-            y1={top + rowPad}
+            y1={headerH}
             x2={xOf(tick)}
-            y2={top + rows.length * rowH - rowPad}
+            y2={plotBottom}
             className="playing-time-grid"
           />
         ))}
+
         {rows.map((row, rowIndex) =>
           row.segments.map((segment, index) => {
-            const y = top + rowIndex * rowH + rowPad;
+            const y = laneTop(rowIndex);
             const x = xOf(segment.startMs);
             const w = Math.max(xOf(segment.endMs) - x, 2);
             const play = segment.kind === 'play';
@@ -165,67 +247,48 @@ function TeamChart({ timeline, rows }: { timeline: CourtTimeline; rows: TeamTime
                 ? `${formatClock(new Date(segment.startMs).toISOString())}–now`
                 : formatMatchWindow(new Date(segment.startMs).toISOString(), new Date(segment.endMs).toISOString())
               : `Break ${seconds}s`;
-            const clipId = `playing-time-team-bar-${row.teamId}-${index}`;
             const versus = play && segment.opponent ? ` vs ${segment.opponent}` : '';
+            const label = play ? segment.opponent : `${seconds}s`;
+            const showLabel = !!label && w >= (play ? 16 : 30);
+            const fill = play ? teamColor(row.teamId) : segment.counted ? BREAK_COLOR : '#cbd5e1';
+            const textClass = play
+              ? 'playing-time-bar-label'
+              : segment.counted
+                ? 'playing-time-break-label'
+                : 'playing-time-idle-label';
             return (
               <g key={`${row.teamId}-${index}`}>
-                <clipPath id={clipId}>
-                  <rect x={x + 4} y={y} width={Math.max(w - 8, 0)} height={laneH} />
-                </clipPath>
                 <rect
-                  x={x}
-                  y={y}
-                  width={w}
-                  height={laneH}
-                  rx={4}
-                  fill={play ? teamColor(row.teamId) : BREAK_COLOR}
-                  stroke={play ? '#1f2937' : 'none'}
-                  strokeOpacity={play ? 0.16 : 0}
-                  opacity={play && segment.live ? 0.85 : 1}
+                  x={x + 1}
+                  y={y + 2}
+                  width={Math.max(w - 2, 1)}
+                  height={laneH - 4}
+                  rx={Math.min(8, (laneH - 4) / 2)}
+                  fill={fill}
+                  className={play && segment.live ? 'playing-time-live' : undefined}
                 />
-                {play && segment.opponent ? (
-                  <text
-                    x={x + w / 2}
-                    y={y + laneH / 2 + 4}
-                    textAnchor="middle"
-                    className="playing-time-bar-label"
-                    clipPath={`url(#${clipId})`}
-                  >
-                    {segment.opponent}
+                {showLabel && (
+                  <text x={x + w / 2} y={y + laneH / 2 + 4} textAnchor="middle" className={textClass}>
+                    {label}
                   </text>
-                ) : null}
-                {!play ? (
-                  <text
-                    x={x + w / 2}
-                    y={y + laneH / 2 + 4}
-                    textAnchor="middle"
-                    className="playing-time-break-label"
-                    clipPath={`url(#${clipId})`}
-                  >
-                    {seconds}s
-                  </text>
-                ) : null}
+                )}
                 <title>{`${row.label} ${row.names}${versus} · ${windowLabel ?? ''}`}</title>
               </g>
             );
           })
         )}
-        <text x={labelW} y={height - 8} textAnchor="start" className="playing-time-tick">
+
+        <line x1={plotX} y1={plotBottom + 4} x2={plotX + plotW} y2={plotBottom + 4} className="playing-time-axis" />
+        <text x={plotX} y={height - 8} textAnchor="start" className="playing-time-tick is-edge">
           {formatAxisClock(axis.startMs)}
         </text>
         {axisLabelTicks(axis.ticks, axis.endMs).map((tick) => (
-          <text
-            key={`label-${tick}`}
-            x={xOf(tick)}
-            y={height - 8}
-            textAnchor="middle"
-            className="playing-time-tick"
-          >
+          <text key={`label-${tick}`} x={xOf(tick)} y={height - 8} textAnchor="middle" className="playing-time-tick">
             {formatAxisClock(tick)}
           </text>
         ))}
         {axis.endMs !== axis.startMs && (
-          <text x={xOf(axis.endMs)} y={height - 8} textAnchor="end" className="playing-time-tick">
+          <text x={plotX + plotW} y={height - 8} textAnchor="end" className="playing-time-tick is-edge">
             {formatAxisClock(axis.endMs)}
           </text>
         )}

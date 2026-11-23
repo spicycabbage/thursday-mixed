@@ -2067,7 +2067,7 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 
   .playing-time-modal {
-    width: min(960px, 100%);
+    width: min(1100px, 100%);
     max-height: 90vh;
     display: flex;
     flex-direction: column;
@@ -2079,18 +2079,60 @@ input[type="number"]::-webkit-inner-spin-button {
 
   .playing-time-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 1rem 1.25rem;
     border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
   }
 
   .playing-time-title {
     margin: 0;
-    font-size: 1.125rem;
+    font-size: 1.25rem;
     font-weight: 800;
     color: #111827;
+    letter-spacing: -0.02em;
+  }
+
+  .playing-time-subtitle {
+    margin: 0.125rem 0 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #6b7280;
+  }
+
+  .playing-time-stats {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .playing-time-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 8.5rem;
+    padding: 0.5rem 0.875rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #f9fafb;
+  }
+
+  .playing-time-stat-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+  }
+
+  .playing-time-stat-value {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #111827;
+    font-variant-numeric: tabular-nums;
   }
 
   .playing-time-close {
@@ -2113,32 +2155,10 @@ input[type="number"]::-webkit-inner-spin-button {
     background: #e5e7eb;
   }
 
-  .playing-time-tabs {
-    display: flex;
-    gap: 0.4rem;
-    padding: 0.75rem 1.25rem 0;
-  }
-
-  .playing-time-tab {
-    border: 1px solid #e5e7eb;
-    background: #f9fafb;
-    color: #374151;
-    font-weight: 800;
-    font-size: 0.85rem;
-    border-radius: 999px;
-    padding: 0.35rem 0.85rem;
-    cursor: pointer;
-  }
-
-  .playing-time-tab.is-active {
-    background: #111827;
-    border-color: #111827;
-    color: #fff;
-  }
-
   .playing-time-body {
-    padding: 1rem 1.25rem 1.25rem;
-    overflow: auto;
+    padding: 0.875rem 1.25rem 1.25rem;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .playing-time-empty {
@@ -2148,11 +2168,6 @@ input[type="number"]::-webkit-inner-spin-button {
     color: #4b5563;
   }
 
-  .playing-time-chart-scroll {
-    overflow-x: auto;
-    width: 100%;
-  }
-
   .playing-time-chart-fit {
     width: 100%;
     overflow: hidden;
@@ -2160,71 +2175,110 @@ input[type="number"]::-webkit-inner-spin-button {
 
   .playing-time-chart {
     display: block;
-    height: auto;
-    max-width: none;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
   }
 
-  .playing-time-chart-fit .playing-time-chart {
-    width: 100%;
-    max-width: 100%;
+  .playing-time-col-head {
+    fill: #6b7280;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
-  .playing-time-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem 1rem;
-    margin: 0.85rem 0 0;
-    padding: 0;
-    list-style: none;
+  .playing-time-row-stripe {
+    fill: #f8fafc;
   }
 
-  .playing-time-legend li {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.8rem;
+  .playing-time-badge {
+    fill: #1e293b;
+  }
+
+  .playing-time-badge-text {
+    fill: #fff;
+    font-size: 12px;
     font-weight: 800;
-    color: #111827;
   }
 
-  .playing-time-swatch {
-    width: 0.85rem;
-    height: 0.85rem;
-    border-radius: 0.2rem;
-    flex-shrink: 0;
-  }
-
-  .playing-time-legend-names {
+  .playing-time-names {
+    fill: #374151;
+    font-size: 13px;
     font-weight: 600;
-    color: #4b5563;
   }
 
   .playing-time-lane {
-    fill: #f3f4f6;
+    fill: #eef2f7;
   }
 
-  .playing-time-court,
+  .playing-time-total {
+    fill: #f1f5f9;
+    stroke: #e2e8f0;
+  }
+
+  .playing-time-total.is-max {
+    fill: #fef3c7;
+    stroke: #fcd34d;
+  }
+
+  .playing-time-total-text {
+    fill: #111827;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
   .playing-time-tick {
+    fill: #9ca3af;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .playing-time-tick.is-edge {
     fill: #374151;
-    font-size: 12px;
-    font-weight: 700;
+    font-weight: 800;
   }
 
   .playing-time-bar-label {
     fill: #1f2937;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 800;
   }
 
   .playing-time-break-label {
     fill: #fff;
-    font-size: 12px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .playing-time-idle-label {
+    fill: #64748b;
+    font-size: 11px;
     font-weight: 700;
   }
 
   .playing-time-grid {
     stroke: #e5e7eb;
     stroke-width: 1;
+    stroke-dasharray: 3 4;
+  }
+
+  .playing-time-axis {
+    stroke: #d1d5db;
+    stroke-width: 1;
+  }
+
+  .playing-time-live {
+    animation: playing-time-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes playing-time-pulse {
+    0%,
+    100% {
+      opacity: 0.95;
+    }
+    50% {
+      opacity: 0.6;
+    }
   }
 
   .team-standings-courts {
