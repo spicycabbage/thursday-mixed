@@ -699,6 +699,7 @@ describe('Game Logic', () => {
     it('ranks 1st–4th from the knockout and leaves 5th and 6th on the round robin', () => {
       let next = playRoundRobin();
       const winsAfterRoundRobin = next.teams.map((team) => team.wins);
+      const diffAfterRoundRobin = next.teams.map((team) => team.pointDiff);
       const semis = next.matches.filter((match) => match.stage === 'semi').sort((a, b) => a.id - b.id);
 
       next = updateMatchScore(next, semis[0].id, 21, 15);
@@ -715,7 +716,8 @@ describe('Game Logic', () => {
 
       expect(isTournamentComplete(next)).toBe(true);
       expect(playoffPlaces(next)?.get(1)).toBe(1);
-      expect(getRankedTeams(next).map((team) => [team.id, team.rank])).toEqual([
+      const ranked = getRankedTeams(next);
+      expect(ranked.map((team) => [team.id, team.rank])).toEqual([
         [1, 1],
         [3, 2],
         [2, 3],
@@ -723,7 +725,13 @@ describe('Game Logic', () => {
         [5, 5],
         [6, 6],
       ]);
-      expect(next.teams.map((team) => team.wins)).toEqual(winsAfterRoundRobin);
+      expect(ranked.find((team) => team.id === 1)?.wins).toBe(winsAfterRoundRobin[0] + 2);
+      expect(ranked.find((team) => team.id === 3)?.wins).toBe(winsAfterRoundRobin[2] + 1);
+      expect(ranked.find((team) => team.id === 2)?.wins).toBe(winsAfterRoundRobin[1] + 1);
+      expect(ranked[1].wins).toBeLessThan(ranked[2].wins);
+      expect(ranked.find((team) => team.id === 5)?.wins).toBe(winsAfterRoundRobin[4]);
+      expect(ranked.find((team) => team.id === 1)?.pointDiff).toBe(diffAfterRoundRobin[0] + 12);
+      expect(getRankedPlayers(next).find((player) => player.teamId === 1)?.wins).toBe(winsAfterRoundRobin[0] + 2);
       expect(getRankedPlayers(next).find((player) => player.teamId === 5)?.rank).toBe(5);
     });
 

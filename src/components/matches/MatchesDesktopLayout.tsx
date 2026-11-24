@@ -137,6 +137,8 @@ export default function MatchesDesktopLayout({
       : latestNumber > 0
         ? `Match ${latestNumber} of ${totalMatches}`
         : `${completedCount}/${totalMatches} complete`;
+  const phaseTitle = playingNowTitle(tournament.matches);
+  const phaseLabel = phaseTitle === 'Semifinals' ? 'Semi-Finals' : phaseTitle === 'Finals' ? 'Finals' : null;
 
   return (
     <div className="matches-desktop-layout">
@@ -150,7 +152,8 @@ export default function MatchesDesktopLayout({
             </div>
           )}
           <div className="matches-desktop-header">
-            <h3 className="text-lg font-bold text-gray-900">{playingNowTitle(tournament.matches)}</h3>
+            <h3 className="text-lg font-bold text-gray-900">Playing Now</h3>
+            {phaseLabel ? <span className="matches-desktop-phase">{phaseLabel}</span> : null}
             <span className="tab-meta">{progressLabel}</span>
           </div>
 

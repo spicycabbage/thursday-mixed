@@ -173,6 +173,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
     [sortedMatches]
   );
   const courtTitle = playingNowTitle(tournament.matches);
+  const phaseLabel = courtTitle === 'Semifinals' ? 'Semi-Finals' : courtTitle === 'Finals' ? 'Finals' : null;
   const tournamentComplete = isTournamentComplete(tournament);
   const podium = useMemo(
     () =>
@@ -190,7 +191,8 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
       pane = (
         <>
           <div className="spectator-meta">
-            <span>{tournamentComplete ? 'Final' : courtTitle}</span>
+            <span>{tournamentComplete ? 'Final' : 'Playing Now'}</span>
+            {!tournamentComplete && phaseLabel ? <span className="spectator-phase">{phaseLabel}</span> : null}
             <span>
               {completed.length}/{sortedMatches.length}
             </span>
@@ -323,7 +325,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
               aria-current={tab === item.id ? 'page' : undefined}
               onClick={() => setTab(item.id)}
             >
-              {item.id === 'playing' ? courtTitle : item.label}
+              {item.label}
             </button>
           ))}
         </nav>

@@ -142,7 +142,15 @@
 }
 
 .app-input {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  @apply w-full min-w-0 px-3 py-2 border border-gray-300 rounded-lg;
+}
+
+.app-input:focus,
+.app-select:focus {
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
+  border-color: #2563eb;
 }
 
 .app-select {
@@ -710,6 +718,8 @@
     flex-direction: row;
     align-items: flex-start;
     gap: 0.625rem;
+    min-width: 0;
+    overflow-anchor: none;
     padding: 0.875rem;
     border: 1px solid #e5e7eb;
     border-radius: 0.5rem;
@@ -722,9 +732,17 @@
 
   .player-list-editor-inputs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.5rem;
     margin-top: 0.25rem;
+    min-width: 0;
+  }
+
+  .player-list-editor-inputs .app-input {
+    height: 2.25rem;
+    min-width: 0;
+    padding-top: 0;
+    padding-bottom: 0;
   }
 
   .player-list-editor-names {
@@ -792,6 +810,14 @@
   color: #0f172a;
 }
 
+.page-shell-registration .app-input:focus,
+.player-list-editor-card .app-input:focus {
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
+  border-color: #2563eb;
+}
+
 .page-shell-registration .app-input::placeholder {
   color: #475569;
   opacity: 1;
@@ -830,6 +856,8 @@
   .page-shell:not(.page-shell-home) .registration-team-card {
     align-self: start;
     height: auto;
+    min-width: 0;
+    overflow-anchor: none;
     padding: 0.5rem 0.75rem;
   }
 
@@ -850,14 +878,17 @@
 
   .page-shell:not(.page-shell-home) .registration-team-fields {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.5rem;
+    min-width: 0;
   }
 
   .page-shell:not(.page-shell-home) .registration-team-card .app-input {
-    padding-top: 0.375rem;
-    padding-bottom: 0.375rem;
-    font-size: 0.875rem;
+    height: 2.25rem;
+    min-width: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 1rem;
   }
 
   .page-shell-registration .page-card-registration {
@@ -1142,6 +1173,35 @@ input[type="number"]::-webkit-inner-spin-button {
   @apply text-sm text-gray-800 font-bold text-center;
 }
 
+.match-caption-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+}
+
+.match-caption-aside {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: auto;
+  flex: none;
+}
+
+.match-caption-medals {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.match-caption-medal {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: block;
+  flex: none;
+}
+
 .tab-card {
   @apply border border-gray-300 rounded-lg p-3 bg-white shadow-sm;
 }
@@ -1367,11 +1427,23 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 
   .matches-desktop-header {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 0.75rem;
+  }
+
+  .matches-desktop-phase {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+    font-weight: 700;
+    color: #111827;
+    pointer-events: none;
   }
 
   .matches-desktop-toolbar {
@@ -1434,6 +1506,11 @@ input[type="number"]::-webkit-inner-spin-button {
   .matches-playing-now .match-caption-spotlight {
     font-size: 1.8rem;
     margin-bottom: 1.05rem;
+  }
+
+  .matches-playing-now .match-caption-medal {
+    width: 1.85rem;
+    height: 1.85rem;
   }
 
   .matches-playing-now .match-entry-spotlight {
@@ -2761,6 +2838,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .spectator-meta {
+  position: relative;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2768,6 +2846,13 @@ input[type="number"]::-webkit-inner-spin-button {
   font-size: 0.8rem;
   font-weight: 700;
   color: #1f2937;
+}
+
+.spectator-phase {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 
@@ -3484,8 +3569,10 @@ button.rank-entry-button {
     margin-bottom: 0.3rem;
   }
 
-  .matches-desktop-header h3 {
+  .matches-desktop-header h3,
+  .matches-desktop-phase {
     font-size: 1rem;
+    line-height: 1.5rem;
   }
 
   .matches-spotlight-grid {
@@ -3511,6 +3598,11 @@ button.rank-entry-button {
   .matches-playing-now .match-caption-spotlight {
     font-size: 1.15rem;
     margin-bottom: 0.35rem;
+  }
+
+  .matches-playing-now .match-caption-medal {
+    width: 1.2rem;
+    height: 1.2rem;
   }
 
   .matches-playing-now .match-entry-spotlight {

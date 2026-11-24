@@ -8,6 +8,43 @@ import { hasUnsavedScoreInput } from '@/lib/tournamentSync';
 export type MatchCardVariant = 'default' | 'spotlight' | 'mini';
 export type MatchCardLabelMode = 'round' | 'sequential';
 
+const MEDALS = {
+  1: { label: 'Gold medal', fill: '#f5c518', edge: '#a16207', ribbon: '#eab308' },
+  2: { label: 'Silver medal', fill: '#e5e7eb', edge: '#6b7280', ribbon: '#9ca3af' },
+  3: { label: 'Bronze medal', fill: '#e8a15a', edge: '#9a3412', ribbon: '#c2410c' },
+} as const;
+
+type MedalPlace = keyof typeof MEDALS;
+
+function MedalIcon({ place }: { place: MedalPlace }) {
+  const medal = MEDALS[place];
+  return (
+    <svg viewBox="0 0 24 24" className="match-caption-medal" role="img" aria-label={medal.label}>
+      <path d="M8 2.2h2.7L12 8.6H9.1L8 2.2z" fill={medal.ribbon} />
+      <path d="M16 2.2h-2.7L12 8.6h2.9L16 2.2z" fill={medal.edge} />
+      <circle cx="12" cy="15.1" r="6.2" fill={medal.edge} />
+      <circle cx="12" cy="15.1" r="5" fill={medal.fill} />
+      <circle cx="12" cy="15.1" r="3.5" fill="none" stroke={medal.edge} strokeWidth="0.7" />
+    </svg>
+  );
+}
+
+function medalPlaces(stage: Match['stage']): readonly MedalPlace[] {
+  switch (stage) {
+    case 'final':
+      return [1, 2];
+    case 'third':
+      return [3];
+    case 'semi':
+    case undefined:
+      return [];
+    default: {
+      const unexpected: never = stage;
+      return unexpected;
+    }
+  }
+}
+
 interface MatchCardProps {
   match: Match;
   tournament: Tournament;
@@ -266,17 +303,31 @@ export default function MatchCard({
 
   return (
     <div className={containerClass}>
-      <p className={isSpotlight ? 'match-caption-spotlight' : 'tab-caption mb-3'}>
+      <p className={`${isSpotlight ? 'match-caption-spotlight' : 'tab-caption mb-3'} match-caption-row`}>
         {(() => {
           const courtLabel = formatCourtLabel(match.court);
-          const stageLabel = playoffMatchLabel(match, tournament.matches);
-          if (stageLabel) return courtLabel ? `${stageLabel} · ${courtLabel}` : stageLabel;
-          if (labelMode === 'sequential') {
-            const number = match.matchNumber ? `Match ${match.matchNumber}` : '';
-            if (number && courtLabel) return `${number} · ${courtLabel}`;
-            return number || courtLabel || '';
-          }
-          return courtLabel ? `Round ${match.round} · ${courtLabel}` : `Round ${match.round}`;
+          const number =
+            labelMode === 'sequential'
+              ? match.matchNumber
+                ? `Match ${match.matchNumber}`
+                : ''
+              : `Round ${match.round}`;
+          const parts = [number, courtLabel].filter(Boolean);
+          const medals = medalPlaces(match.stage);
+          return (
+            <>
+              {parts.length > 0 ? <span>{parts.join(' · ')}</span> : null}
+              {medals.length > 0 ? (
+                <span className="match-caption-aside">
+                  <span className="match-caption-medals">
+                    {medals.map((place) => (
+                      <MedalIcon key={place} place={place} />
+                    ))}
+                  </span>
+                </span>
+              ) : null}
+            </>
+          );
         })()}
       </p>
 

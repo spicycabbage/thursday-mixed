@@ -592,15 +592,13 @@ function applyMatchStats(
   tournament: Tournament,
   match: Match,
   scoreA: number,
-  scoreB: number,
-  countStats = true
+  scoreB: number
 ): void {
   const winner = getWinnerTeam(scoreA, scoreB);
   match.scoreA = scoreA;
   match.scoreB = scoreB;
   match.completed = true;
   match.winnerTeam = winner;
-  if (!countStats) return;
 
   const teamA = tournament.teams.find((t) => t.id === match.teamAId);
   const teamB = tournament.teams.find((t) => t.id === match.teamBId);
@@ -661,10 +659,7 @@ export function recomputeAllStats(tournament: Tournament, pendingMatch?: { id: n
         : m.completed && m.scoreA != null && m.scoreB != null
           ? { scoreA: m.scoreA, scoreB: m.scoreB }
           : null;
-    if (scores) {
-      // Knockout games decide places. They stay off the round-robin table so 5th and 6th do not move.
-      applyMatchStats(tournament, m, scores.scoreA, scores.scoreB, !m.stage);
-    }
+    if (scores) applyMatchStats(tournament, m, scores.scoreA, scores.scoreB);
   }
 }
 
@@ -885,16 +880,43 @@ function headToHeadWinner(matches: Match[], teamAId: number, teamBId: number): n
   return match.winnerTeam === 'A' ? match.teamAId : match.teamBId;
 }
 
-/** Round-robin order used to fill the 6-team bracket. Ties break on head-to-head, then points scored, then team id. */
+function playoffRecord(matches: Match[], teamId: number): { wins: number; pointDiff: number; pointsFor: number } {
+  let wins = 0;
+  let pointDiff = 0;
+  let pointsFor = 0;
+  for (const match of matches) {
+    if (!match.stage || !match.completed || match.scoreA == null || match.scoreB == null) continue;
+    const isA = match.teamAId === teamId;
+    if (!isA && match.teamBId !== teamId) continue;
+    const scored = isA ? match.scoreA : match.scoreB;
+    const allowed = isA ? match.scoreB : match.scoreA;
+    pointsFor += scored;
+    pointDiff += scored - allowed;
+    if (scored > allowed) wins += 1;
+  }
+  return { wins, pointDiff, pointsFor };
+}
+
+/** Round-robin order used to fill the 6-team bracket. Playoff games stay out of this sort. Ties break on head-to-head, then points scored, then team id. */
 export function seedTeams(tournament: Tournament): Team[] {
   const roundRobin = tournament.matches.filter((match) => !match.stage);
+  const group = (team: Team) => {
+    const extra = playoffRecord(tournament.matches, team.id);
+    return {
+      wins: team.wins - extra.wins,
+      pointDiff: team.pointDiff - extra.pointDiff,
+      pointsFor: team.pointsFor - extra.pointsFor,
+    };
+  };
   return [...tournament.teams].sort((a, b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff;
+    const left = group(a);
+    const right = group(b);
+    if (right.wins !== left.wins) return right.wins - left.wins;
+    if (right.pointDiff !== left.pointDiff) return right.pointDiff - left.pointDiff;
     const winner = headToHeadWinner(roundRobin, a.id, b.id);
     if (winner === a.id) return -1;
     if (winner === b.id) return 1;
-    if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
+    if (right.pointsFor !== left.pointsFor) return right.pointsFor - left.pointsFor;
     return a.id - b.id;
   });
 }
