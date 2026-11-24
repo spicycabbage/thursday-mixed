@@ -17,6 +17,7 @@ import {
   orderPlayingNow,
   buildQueueCards,
   queuePlaceLabel,
+  restingCourts,
   type Match,
   getMatchPlayerIds,
   matchesShareParticipants,
@@ -401,6 +402,61 @@ describe('Game Logic', () => {
         const longest = Math.max(...next.matches.flatMap((match) => [match.streakA ?? 1, match.streakB ?? 1]));
         expect(longest).toBeLessThanOrEqual(count === 6 ? 3 : 2);
       }
+    });
+
+    it('names the court held open so a team does not play too many games in a row', () => {
+      const side = (teamId: number) => ({ player1: teamId * 2 - 1, player2: teamId * 2 });
+      const match = (partial: Pick<Match, 'id' | 'teamAId' | 'teamBId'> & Partial<Match>): Match => ({
+        round: 1,
+        court: 0,
+        teamA: side(partial.teamAId),
+        teamB: side(partial.teamBId),
+        scoreA: null,
+        scoreB: null,
+        completed: false,
+        winnerTeam: null,
+        ...partial,
+      });
+      const played = (id: number, teamAId: number, teamBId: number, finishOrder: number, streakA: number): Match =>
+        match({
+          id,
+          teamAId,
+          teamBId,
+          completed: true,
+          finishOrder,
+          streakA,
+          streakB: 1,
+          scoreA: 21,
+          scoreB: 15,
+          winnerTeam: 'A',
+          court: 1,
+        });
+
+      const seven = [
+        played(1, 3, 5, 1, 1),
+        played(2, 3, 6, 2, 2),
+        match({ id: 3, teamAId: 1, teamBId: 2, court: 1 }),
+        match({ id: 4, teamAId: 3, teamBId: 4 }),
+        match({ id: 5, teamAId: 7, teamBId: 5, completed: true, finishOrder: 0, scoreA: 21, scoreB: 12, winnerTeam: 'A' }),
+      ];
+      expect(restingCourts(seven, [1, 2])).toEqual([{ court: 2, holds: [{ teamId: 3, gamesInARow: 3 }] }]);
+
+      const sixAllowed = [
+        played(1, 3, 5, 1, 1),
+        played(2, 3, 6, 2, 2),
+        match({ id: 3, teamAId: 1, teamBId: 2, court: 1 }),
+        match({ id: 4, teamAId: 3, teamBId: 4 }),
+      ];
+      expect(restingCourts(sixAllowed, [1, 2])).toEqual([]);
+
+      const sixHeld = [
+        played(1, 3, 4, 1, 1),
+        played(2, 3, 5, 2, 2),
+        played(3, 3, 6, 3, 3),
+        match({ id: 4, teamAId: 1, teamBId: 2, court: 1 }),
+        match({ id: 5, teamAId: 3, teamBId: 4 }),
+      ];
+      expect(restingCourts(sixHeld, [1, 2])).toEqual([{ court: 2, holds: [{ teamId: 3, gamesInARow: 4 }] }]);
     });
 
     it('puts a requeued match at the end of the queue and clears its score', () => {

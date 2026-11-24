@@ -1423,6 +1423,14 @@ input[type="number"]::-webkit-inner-spin-button {
     padding: 1.5rem;
   }
 
+  .matches-playing-now .resting-court-title {
+    font-size: 1.5rem;
+  }
+
+  .matches-playing-now .resting-court-body {
+    font-size: 1.05rem;
+  }
+
   .matches-playing-now .match-caption-spotlight {
     font-size: 1.8rem;
     margin-bottom: 1.05rem;
@@ -2867,6 +2875,40 @@ input[type="number"]::-webkit-inner-spin-button {
   background: #f9fafb;
 }
 
+.resting-court-card {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 2px dashed #d1d5db;
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: #f9fafb;
+  text-align: left;
+}
+
+.resting-court-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.02em;
+}
+
+.resting-court-status {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b45309;
+}
+
+.resting-court-body {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: #374151;
+}
+
 
 .spectator-champions {
   display: flex;
@@ -3197,12 +3239,52 @@ button.rank-entry-button {
 .match-edit-modal-backdrop {
   position: fixed;
   inset: 0;
+  /* 100dvh wins over bottom: 0, so the sheet sits on the visible viewport
+     instead of under the mobile browser toolbar. */
+  height: 100dvh;
+  max-height: 100dvh;
   z-index: 50;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 0;
   background: rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 767px) {
+  .match-edit-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    border-radius: 0.75rem 0.75rem 0 0;
+    background: #fff;
+    color: #111827;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.28);
+  }
+
+  .match-edit-modal-header {
+    flex: 0 0 auto;
+  }
+
+  .match-edit-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+    background: #fff;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .queue-explain-extra {
+    display: none;
+  }
+
+  .queue-explain-modal {
+    /* Tallest explanation at phone width. Locks Confirmed Next and Tentative Queue to one sheet height. */
+    height: calc(15.375rem + env(safe-area-inset-bottom));
+  }
 }
 
 .team-summary-modal {
@@ -3412,6 +3494,18 @@ button.rank-entry-button {
 
   .matches-playing-now .match-card-spotlight {
     padding: 0.65rem 0.75rem;
+  }
+
+  .matches-playing-now .resting-court-card {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .matches-playing-now .resting-court-title {
+    font-size: 1.15rem;
+  }
+
+  .matches-playing-now .resting-court-body {
+    font-size: 0.8rem;
   }
 
   .matches-playing-now .match-caption-spotlight {

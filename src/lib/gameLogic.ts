@@ -998,6 +998,63 @@ export function getDesktopSpotlightMatches(
   return { spotlight, deferred };
 }
 
+export interface RestingCourtHold {
+  teamId: number;
+  gamesInARow: number;
+}
+
+export interface RestingCourt {
+  court: number;
+  holds: RestingCourtHold[];
+}
+
+/** Courts left empty because the only free matches would break the consecutive-game cap. */
+export function restingCourts(matches: Match[], courtNumbers: number[]): RestingCourt[] {
+  const courts = courtNumbers.filter((court) => court > 0);
+  if (courts.length === 0) return [];
+  const { spotlight } = getDesktopSpotlightMatches(matches, courts.length);
+  if (spotlight.length === 0 || spotlight.length >= courts.length) return [];
+
+  const used = new Set(spotlight.map((match) => match.court).filter((court) => courts.includes(court)));
+  const free = courts.filter((court) => !used.has(court)).slice(0, courts.length - spotlight.length);
+  if (free.length === 0) return [];
+
+  const maxRun = maxRunFor(matches);
+  const seatedIds = new Set(spotlight.map((match) => match.id));
+  const clean = matches.filter(
+    (match) => !match.completed && !seatedIds.has(match.id) && !matchesConflictWithAny(match, spotlight)
+  );
+  const overCap = (match: Match) => [match.teamAId, match.teamBId].some((teamId) => nextRun(matches, teamId) > maxRun);
+  const blocked = clean.filter(overCap);
+  if (blocked.length === 0 || clean.some((match) => !overCap(match))) return [];
+
+  const held: Match[] = [];
+  const against = [...spotlight];
+  const remaining = blocked.slice();
+  while (held.length < free.length) {
+    const options = remaining.filter((match) => !matchesConflictWithAny(match, against));
+    const next = pickNextMatch(options, matches);
+    if (!next) break;
+    held.push(next);
+    against.push(next);
+    const index = remaining.indexOf(next);
+    if (index >= 0) remaining.splice(index, 1);
+  }
+
+  return held.map((match, index) => ({
+    court: free[index],
+    holds: [match.teamAId, match.teamBId]
+      .map((teamId) => ({ teamId, gamesInARow: nextRun(matches, teamId) }))
+      .filter((hold) => hold.gamesInARow > maxRun),
+  }));
+}
+
+export function gamesInARowLabel(games: number): string {
+  if (games === 3) return 'a third';
+  if (games === 4) return 'a fourth';
+  return `a ${games}th`;
+}
+
 export type QueuePlace =
   | { kind: 'confirmed'; offset: number }
   | { kind: 'tentative'; reason: 'on-court' | 'overlap' | 'later' | 'requeued' }
@@ -1025,10 +1082,8 @@ export function queuePlaceExplanation(place: QueuePlace): string {
   switch (place.reason) {
     case 'on-court':
       return 'Someone in this match is still playing. It cannot be called until that game ends, and by then the line can be re-sorted by who has waited longer and who has played more.';
-    case 'streak': {
-      const which = place.gamesInARow === 3 ? 'a third' : place.gamesInARow === 4 ? 'a fourth' : `a ${place.gamesInARow}th`;
-      return `One of these teams would be playing ${which} game in a row, so they wait. A team that has had a longer break can be called ahead of them.`;
-    }
+    case 'streak':
+      return `One of these teams would be playing ${gamesInARowLabel(place.gamesInARow)} game in a row, so they wait. A team that has had a longer break can be called ahead of them.`;
     case 'overlap':
       return 'This match shares a player with a confirmed match ahead of it, so it waits. The rest of the line can still be re-sorted by wait time and how busy each team is.';
     case 'requeued':

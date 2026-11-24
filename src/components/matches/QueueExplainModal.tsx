@@ -24,7 +24,7 @@ export default function QueueExplainModal({ card, tournament, onClose }: QueueEx
   return (
     <div className="match-edit-modal-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="match-edit-modal"
+        className="match-edit-modal queue-explain-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="queue-explain-title"
@@ -44,7 +44,19 @@ export default function QueueExplainModal({ card, tournament, onClose }: QueueEx
             <span> vs </span>
             {side(card.match.teamB.player1, card.match.teamB.player2)}
           </p>
-          <p>{queuePlaceExplanation(card.place)}</p>
+          <p>
+            {card.place.kind === 'confirmed' && card.place.offset === 0 ? (
+              <>
+                This match is next on court.
+                <span className="queue-explain-extra">
+                  {' '}
+                  Both teams are free, so this spot will not move because someone else has waited longer or played fewer games.
+                </span>
+              </>
+            ) : (
+              queuePlaceExplanation(card.place)
+            )}
+          </p>
         </div>
       </div>
     </div>

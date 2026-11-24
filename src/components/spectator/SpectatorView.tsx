@@ -9,6 +9,8 @@ import {
   orderPlayingNow,
   buildQueueCards,
   queuePlaceLabel,
+  restingCourts,
+  getCourtNumbers,
   type QueueCard,
   courtCountForTeams,
   getRankedTeams,
@@ -16,6 +18,7 @@ import {
   isTournamentComplete,
 } from '@/lib/gameLogic';
 import MatchCard from '@/components/matches/MatchCard';
+import RestingCourtCard from '@/components/matches/RestingCourtCard';
 import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
 import { CelebrationTrophy } from '@/components/matches/WinnerCelebrationSpotlight';
 import RankTab from '@/components/RankTab';
@@ -156,6 +159,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
     [sortedMatches, tournament.teams.length]
   );
   const playingNow = useMemo(() => orderPlayingNow(spotlight), [spotlight]);
+  const openCourts = useMemo(() => restingCourts(tournament.matches, getCourtNumbers(tournament)), [tournament]);
   const queueCards = useMemo(
     () => buildQueueCards(tournament.matches, deferred, courtCountForTeams(tournament.teams.length)),
     [tournament.matches, deferred, tournament.teams.length]
@@ -195,7 +199,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
               podium={podium}
               onViewStandings={() => setTab('ranking')}
             />
-          ) : playingNow.length > 0 ? (
+          ) : playingNow.length > 0 || openCourts.length > 0 ? (
             <div className="space-y-3">
               {playingNow.map((match) => (
                 <MatchCard
@@ -206,6 +210,9 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
                   readOnly
                   labelMode="sequential"
                 />
+              ))}
+              {openCourts.map((court) => (
+                <RestingCourtCard key={court.court} tournament={tournament} court={court} />
               ))}
             </div>
           ) : (

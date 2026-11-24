@@ -8,6 +8,8 @@ import {
   orderPlayingNow,
   buildQueueCards,
   queuePlaceLabel,
+  restingCourts,
+  getCourtNumbers,
   type QueueCard,
   courtCountForTeams,
   getRankedTeams,
@@ -15,6 +17,7 @@ import {
 } from '@/lib/gameLogic';
 import TeamStandingsPanel from '@/components/TeamStandingsPanel';
 import MatchCard from '@/components/matches/MatchCard';
+import RestingCourtCard from '@/components/matches/RestingCourtCard';
 import WinnerCelebrationSpotlight from '@/components/matches/WinnerCelebrationSpotlight';
 import TeamSummaryModal from '@/components/matches/TeamSummaryModal';
 import QueueExplainModal from '@/components/matches/QueueExplainModal';
@@ -68,6 +71,10 @@ export default function MatchesDesktopLayout({
     [sortedMatches, courtCount]
   );
   const playingNow = useMemo(() => orderPlayingNow(spotlightMatches), [spotlightMatches]);
+  const openCourts = useMemo(
+    () => restingCourts(tournament.matches, getCourtNumbers(tournament)),
+    [tournament]
+  );
   const queueCards = useMemo(
     () => buildQueueCards(tournament.matches, deferredMatches, courtCount),
     [tournament.matches, deferredMatches, courtCount]
@@ -150,7 +157,7 @@ export default function MatchesDesktopLayout({
             {tournamentComplete && podium.length > 0 ? (
               <WinnerCelebrationSpotlight tournament={tournament} podium={podium} />
             ) : (
-              <div className={`matches-spotlight-grid${playingNow.length >= 3 ? ' matches-spotlight-grid-3' : ''}`}>
+              <div className={`matches-spotlight-grid${courtCount >= 3 ? ' matches-spotlight-grid-3' : ''}`}>
                 {playingNow.map((match) => (
                   <MatchCard
                     onUnsavedScoreChange={onUnsavedScoreChange}
@@ -161,6 +168,9 @@ export default function MatchesDesktopLayout({
                     variant="spotlight"
                     labelMode="sequential"
                   />
+                ))}
+                {openCourts.map((court) => (
+                  <RestingCourtCard key={court.court} tournament={tournament} court={court} />
                 ))}
               </div>
             )}
