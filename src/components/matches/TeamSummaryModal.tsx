@@ -92,7 +92,7 @@ export default function TeamSummaryModal({
                 }`}
               >
                 <div className="team-summary-match-main">
-                  <span className="team-summary-match-id">#{summary.matchId}</span>
+                  <span className="team-summary-match-id">{summary.label ?? `#${summary.matchId}`}</span>
                   <span className="team-summary-match-opponent">
                     vs {opponentNames(summary.opponentTeamId)}
                   </span>

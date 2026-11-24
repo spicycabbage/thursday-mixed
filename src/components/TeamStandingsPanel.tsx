@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Tournament, formatSideNames, getRankedTeams, isSinglesEvent, isTournamentComplete } from '@/lib/gameLogic';
+import { Tournament, formatSideNames, getRankedTeams, isSinglesEvent, isTournamentComplete, playingNowTitle, standingsHint } from '@/lib/gameLogic';
 import PlayingTimeModal from '@/components/matches/PlayingTimeModal';
 
 interface TeamStandingsPanelProps {
@@ -30,9 +30,11 @@ export default function TeamStandingsPanel({
     <div className={compact ? 'team-standings-panel team-standings-panel-compact' : 'team-standings-panel'}>
       <h4 className="team-standings-title">{singles ? 'Player Standings' : 'Team Standings'}</h4>
       <p className="team-standings-hint">
-        {onTeamSelect
-          ? `Click a ${singles ? 'player' : 'team'} for match schedule`
-          : 'Updates live as scores are entered'}
+        {playingNowTitle(tournament.matches) === 'Playing Now'
+          ? onTeamSelect
+            ? `Click a ${singles ? 'player' : 'team'} for match schedule`
+            : 'Updates live as scores are entered'
+          : standingsHint(tournament)}
       </p>
       <div className="team-standings-list">
         {rankedTeams.map((team) => {

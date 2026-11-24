@@ -56,6 +56,15 @@ export interface Match {
   startedAt?: string;
   /** Set the first time a score is submitted for a match that had started. */
   endedAt?: string;
+  /** Absent on round-robin matches. Set for the 6-team knockout. */
+  stage?: PlayoffStage;
+}
+
+export type PlayoffStage = 'semi' | 'final' | 'third';
+
+export function playoffStageOf(value: unknown): PlayoffStage | undefined {
+  if (value === 'semi' || value === 'final' || value === 'third') return value;
+  return undefined;
 }
 
 export type EventType = 'MD' | 'WD' | 'XD' | 'MS' | 'WS';
@@ -583,13 +592,15 @@ function applyMatchStats(
   tournament: Tournament,
   match: Match,
   scoreA: number,
-  scoreB: number
+  scoreB: number,
+  countStats = true
 ): void {
   const winner = getWinnerTeam(scoreA, scoreB);
   match.scoreA = scoreA;
   match.scoreB = scoreB;
   match.completed = true;
   match.winnerTeam = winner;
+  if (!countStats) return;
 
   const teamA = tournament.teams.find((t) => t.id === match.teamAId);
   const teamB = tournament.teams.find((t) => t.id === match.teamBId);
@@ -651,7 +662,8 @@ export function recomputeAllStats(tournament: Tournament, pendingMatch?: { id: n
           ? { scoreA: m.scoreA, scoreB: m.scoreB }
           : null;
     if (scores) {
-      applyMatchStats(tournament, m, scores.scoreA, scores.scoreB);
+      // Knockout games decide places. They stay off the round-robin table so 5th and 6th do not move.
+      applyMatchStats(tournament, m, scores.scoreA, scores.scoreB, !m.stage);
     }
   }
 }
@@ -687,14 +699,16 @@ export function updateMatchScore(
     if (roundCompleted && match.round < lastRound) {
       updatedTournament.currentRound = match.round + 1;
     }
-    if (!wasCompleted) {
-      const at = new Date().toISOString();
-      if (updatedTournament.startedAt && match.startedAt) {
-        match.endedAt = match.endedAt ?? at;
-      }
-      syncPlayingCourts(updatedTournament, { freedCourt: freedCourt || undefined });
-      if (updatedTournament.startedAt) stampOpenMatchStarts(updatedTournament, match.endedAt ?? at);
+  }
+
+  const bracketChanged = syncPlayoffBracket(updatedTournament);
+  if ((!isEdit && !wasCompleted) || bracketChanged) {
+    const at = new Date().toISOString();
+    if (!isEdit && !wasCompleted && updatedTournament.startedAt && match.startedAt) {
+      match.endedAt = match.endedAt ?? at;
     }
+    syncPlayingCourts(updatedTournament, { freedCourt: freedCourt || undefined });
+    if (updatedTournament.startedAt) stampOpenMatchStarts(updatedTournament, match.endedAt ?? at);
   }
 
   return updatedTournament;
@@ -823,18 +837,21 @@ export function requeueMatch(tournament: Tournament, matchId: number): Tournamen
   match.endedAt = undefined;
 
   recomputeAllStats(updatedTournament);
-  const incompleteRounds = updatedTournament.matches
-    .filter((item) => !item.completed)
-    .map((item) => item.round);
-  updatedTournament.currentRound = Math.min(...incompleteRounds);
+  syncPlayoffBracket(updatedTournament);
+  if (!updatedTournament.matches.some((item) => item.stage)) {
+    const incompleteRounds = updatedTournament.matches
+      .filter((item) => !item.completed)
+      .map((item) => item.round);
+    if (incompleteRounds.length > 0) updatedTournament.currentRound = Math.min(...incompleteRounds);
+  }
   syncPlayingCourts(updatedTournament);
   if (updatedTournament.startedAt) stampOpenMatchStarts(updatedTournament, new Date().toISOString());
 
   return updatedTournament;
 }
 
-export function getRankedTeams(tournament: Tournament): Team[] {
-  const sorted = [...tournament.teams].sort((a, b) => {
+function rankByRecord(teams: Team[]): Team[] {
+  const sorted = [...teams].sort((a, b) => {
     if (b.wins !== a.wins) return b.wins - a.wins;
     return b.pointDiff - a.pointDiff;
   });
@@ -855,7 +872,273 @@ export function getRankedTeams(tournament: Tournament): Team[] {
   return ranked;
 }
 
+function headToHeadWinner(matches: Match[], teamAId: number, teamBId: number): number | null {
+  const match = matches.find(
+    (item) =>
+      !item.stage &&
+      item.completed &&
+      item.winnerTeam &&
+      ((item.teamAId === teamAId && item.teamBId === teamBId) ||
+        (item.teamAId === teamBId && item.teamBId === teamAId))
+  );
+  if (!match || !match.winnerTeam) return null;
+  return match.winnerTeam === 'A' ? match.teamAId : match.teamBId;
+}
+
+/** Round-robin order used to fill the 6-team bracket. Ties break on head-to-head, then points scored, then team id. */
+export function seedTeams(tournament: Tournament): Team[] {
+  const roundRobin = tournament.matches.filter((match) => !match.stage);
+  return [...tournament.teams].sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff;
+    const winner = headToHeadWinner(roundRobin, a.id, b.id);
+    if (winner === a.id) return -1;
+    if (winner === b.id) return 1;
+    if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
+    return a.id - b.id;
+  });
+}
+
+function winnerTeamId(match: Match): number {
+  return match.winnerTeam === 'B' ? match.teamBId : match.teamAId;
+}
+
+function loserTeamId(match: Match): number {
+  return match.winnerTeam === 'B' ? match.teamAId : match.teamBId;
+}
+
+function fillMatchSides(tournament: Tournament, match: Match, teamAId: number, teamBId: number): void {
+  const teamA = tournament.teams.find((team) => team.id === teamAId);
+  const teamB = tournament.teams.find((team) => team.id === teamBId);
+  if (!teamA || !teamB) return;
+  match.teamAId = teamAId;
+  match.teamBId = teamBId;
+  match.teamA = { player1: teamA.player1Id, player2: teamA.player2Id };
+  match.teamB = { player1: teamB.player1Id, player2: teamB.player2Id };
+}
+
+function clearMatchResult(match: Match): void {
+  match.scoreA = null;
+  match.scoreB = null;
+  match.completed = false;
+  match.winnerTeam = null;
+  match.finishOrder = undefined;
+  match.streakA = undefined;
+  match.streakB = undefined;
+  match.court = UNASSIGNED_COURT;
+  match.startedAt = undefined;
+  match.endedAt = undefined;
+  match.matchNumber = undefined;
+  match.queueOrder = undefined;
+}
+
+function nextMatchId(matches: Match[]): number {
+  return matches.reduce((max, match) => Math.max(max, match.id), 0) + 1;
+}
+
+function makePlayoffMatch(
+  tournament: Tournament,
+  id: number,
+  round: number,
+  stage: PlayoffStage,
+  teamAId: number,
+  teamBId: number
+): Match {
+  const match: Match = {
+    id,
+    round,
+    court: UNASSIGNED_COURT,
+    teamAId,
+    teamBId,
+    teamA: { player1: 0, player2: 0 },
+    teamB: { player1: 0, player2: 0 },
+    scoreA: null,
+    scoreB: null,
+    completed: false,
+    winnerTeam: null,
+    stage,
+  };
+  fillMatchSides(tournament, match, teamAId, teamBId);
+  return match;
+}
+
+function ensureBracketMatch(
+  tournament: Tournament,
+  stage: 'final' | 'third',
+  round: number,
+  teamAId: number,
+  teamBId: number
+): boolean {
+  const existing = tournament.matches.find((match) => match.stage === stage);
+  if (!existing) {
+    tournament.matches.push(makePlayoffMatch(tournament, nextMatchId(tournament.matches), round, stage, teamAId, teamBId));
+    return true;
+  }
+  if (existing.teamAId === teamAId && existing.teamBId === teamBId && existing.round === round) return false;
+  existing.round = round;
+  existing.stage = stage;
+  fillMatchSides(tournament, existing, teamAId, teamBId);
+  clearMatchResult(existing);
+  return true;
+}
+
+/**
+ * 6-team events add a knockout once the round robin is done.
+ * Semis are 1st vs 4th and 2nd vs 3rd. Winners play the final, losers play for 3rd.
+ * Returns true when the match list or the current round changed.
+ */
+export function syncPlayoffBracket(tournament: Tournament): boolean {
+  if (tournament.teams.length !== 6) {
+    if (!tournament.matches.some((match) => match.stage)) return false;
+    tournament.matches = tournament.matches.filter((match) => !match.stage);
+    return true;
+  }
+
+  const roundRobin = tournament.matches.filter((match) => !match.stage);
+  const roundRobinDone =
+    roundRobin.length === matchCountForTeams(6) && roundRobin.every((match) => match.completed);
+  if (!roundRobinDone) {
+    if (!tournament.matches.some((match) => match.stage)) return false;
+    tournament.matches = tournament.matches.filter((match) => !match.stage);
+    return true;
+  }
+
+  let changed = false;
+  const semiRound = getTournamentRoundCount(roundRobin) + 1;
+  let semis = tournament.matches.filter((match) => match.stage === 'semi').sort((a, b) => a.id - b.id);
+  const seeds = seedTeams(tournament);
+  const pairings: [number, number][] = [
+    [seeds[0].id, seeds[3].id],
+    [seeds[1].id, seeds[2].id],
+  ];
+  const semisOpen = semis.length === 0 || semis.every((match) => !match.completed);
+
+  if (semis.length !== 2 && semisOpen) {
+    tournament.matches = tournament.matches.filter((match) => match.stage !== 'semi');
+    for (const [teamAId, teamBId] of pairings) {
+      tournament.matches.push(
+        makePlayoffMatch(tournament, nextMatchId(tournament.matches), semiRound, 'semi', teamAId, teamBId)
+      );
+    }
+    semis = tournament.matches.filter((match) => match.stage === 'semi').sort((a, b) => a.id - b.id);
+    changed = true;
+  } else if (semis.length === 2 && semis.every((match) => !match.completed)) {
+    semis.forEach((semi, index) => {
+      const [teamAId, teamBId] = pairings[index];
+      if (semi.teamAId === teamAId && semi.teamBId === teamBId) return;
+      semi.round = semiRound;
+      fillMatchSides(tournament, semi, teamAId, teamBId);
+      clearMatchResult(semi);
+      changed = true;
+    });
+  }
+
+  const semisReady =
+    semis.length === 2 && semis.every((match) => match.completed && (match.winnerTeam === 'A' || match.winnerTeam === 'B'));
+  if (!semisReady) {
+    const before = tournament.matches.length;
+    tournament.matches = tournament.matches.filter((match) => match.stage !== 'final' && match.stage !== 'third');
+    if (tournament.matches.length !== before) changed = true;
+  } else {
+    const finalRound = semis[0].round + 1;
+    if (ensureBracketMatch(tournament, 'final', finalRound, winnerTeamId(semis[0]), winnerTeamId(semis[1]))) changed = true;
+    if (ensureBracketMatch(tournament, 'third', finalRound, loserTeamId(semis[0]), loserTeamId(semis[1]))) changed = true;
+  }
+
+  const liveSemis = tournament.matches.filter((match) => match.stage === 'semi');
+  if (liveSemis.length > 0) {
+    const semisDone = liveSemis.length === 2 && liveSemis.every((match) => match.completed);
+    const nextRound = semisDone ? liveSemis[0].round + 1 : liveSemis[0].round;
+    if (tournament.currentRound !== nextRound) {
+      tournament.currentRound = nextRound;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+/** Places 1–4 once the final and the 3rd-place match are both in. */
+export function playoffPlaces(tournament: Tournament): Map<number, number> | null {
+  if (tournament.teams.length !== 6) return null;
+  const final = tournament.matches.find((match) => match.stage === 'final' && match.completed && match.winnerTeam);
+  const third = tournament.matches.find((match) => match.stage === 'third' && match.completed && match.winnerTeam);
+  if (!final || !third) return null;
+  return new Map<number, number>([
+    [winnerTeamId(final), 1],
+    [loserTeamId(final), 2],
+    [winnerTeamId(third), 3],
+    [loserTeamId(third), 4],
+  ]);
+}
+
+export function playingNowTitle(matches: Match[]): string {
+  const open = matches.filter((match) => !match.completed && match.stage);
+  if (open.some((match) => match.stage === 'semi')) return 'Semifinals';
+  if (open.some((match) => match.stage === 'final' || match.stage === 'third')) return 'Finals';
+  return 'Playing Now';
+}
+
+export function roundHeading(matches: Match[], round: number): string {
+  const sample = matches.find((match) => match.round === round);
+  if (sample?.stage === 'semi') return 'Semifinals';
+  if (sample?.stage === 'final' || sample?.stage === 'third') return 'Finals';
+  return `Round ${round}`;
+}
+
+export function playoffMatchLabel(match: Match, matches: Match[]): string | null {
+  if (!match.stage) return null;
+  switch (match.stage) {
+    case 'final':
+      return 'Final';
+    case 'third':
+      return '3rd / 4th';
+    case 'semi': {
+      const semis = matches.filter((item) => item.stage === 'semi').sort((a, b) => a.id - b.id);
+      return semis[1]?.id === match.id ? '2nd vs 3rd' : '1st vs 4th';
+    }
+    default: {
+      const unexpected: never = match.stage;
+      return unexpected;
+    }
+  }
+}
+
+export function standingsHint(tournament: Tournament): string {
+  if (playoffPlaces(tournament)) return '1st–4th from the playoffs. 5th and 6th from the round robin.';
+  const title = playingNowTitle(tournament.matches);
+  if (title === 'Semifinals') return 'Round robin order. Semifinals are 1st vs 4th and 2nd vs 3rd.';
+  if (title === 'Finals') return 'Winners play the final. Losers play for 3rd. 5th and 6th stay put.';
+  return 'Ranked by W-L, then point differential';
+}
+
+export function getRankedTeams(tournament: Tournament): Team[] {
+  const places = playoffPlaces(tournament);
+  const bracketOn = tournament.teams.length === 6 && tournament.matches.some((match) => match.stage === 'semi');
+  if (!places && !bracketOn) return rankByRecord(tournament.teams);
+
+  const seeds = seedTeams(tournament);
+  if (!places) return seeds.map((team, index) => ({ ...team, rank: index + 1 }));
+
+  const byId = new Map(seeds.map((team) => [team.id, team]));
+  const top: Team[] = [];
+  for (const place of [1, 2, 3, 4]) {
+    const id = [...places.entries()].find(([, rank]) => rank === place)?.[0];
+    const team = id == null ? undefined : byId.get(id);
+    if (team) top.push({ ...team, rank: place });
+  }
+  const rest = seeds.filter((team) => !places.has(team.id));
+  return [...top, ...rest.map((team, index) => ({ ...team, rank: 5 + index }))];
+}
+
 export function getRankedPlayers(tournament: Tournament): Player[] {
+  if (playoffPlaces(tournament)) {
+    const teamRanks = new Map(getRankedTeams(tournament).map((team) => [team.id, team.rank ?? 0]));
+    return [...tournament.players]
+      .sort((a, b) => (teamRanks.get(a.teamId) ?? 99) - (teamRanks.get(b.teamId) ?? 99) || a.id - b.id)
+      .map((player) => ({ ...player, rank: teamRanks.get(player.teamId) }));
+  }
+
   const sorted = [...tournament.players].sort((a, b) => {
     if (b.wins !== a.wins) return b.wins - a.wins;
     return b.pointDiff - a.pointDiff;
@@ -897,6 +1180,7 @@ export interface TeamMatchSummary {
   opponentScore: number | null;
   completed: boolean;
   won: boolean | null;
+  label: string | null;
 }
 
 export function getTeamMatchSummaries(tournament: Tournament, teamId: number): TeamMatchSummary[] {
@@ -920,6 +1204,7 @@ export function getTeamMatchSummaries(tournament: Tournament, teamId: number): T
         opponentScore,
         completed: match.completed,
         won,
+        label: playoffMatchLabel(match, tournament.matches),
       };
     });
 }
@@ -960,6 +1245,28 @@ export function getDesktopSpotlightMatches(
   matches: Match[],
   maxSpotlight = 2
 ): { spotlight: Match[]; deferred: Match[] } {
+  const openPlayoff = matches.filter((match) => !match.completed && match.stage);
+  if (openPlayoff.length > 0) {
+    const semis = openPlayoff.filter((match) => match.stage === 'semi');
+    const pool = (semis.length > 0 ? semis : openPlayoff.filter((match) => match.stage === 'final' || match.stage === 'third'))
+      .sort((a, b) => a.id - b.id);
+    const spotlight: Match[] = [];
+    const usedCourts = new Set<number>();
+    for (const match of pool) {
+      if (spotlight.length >= maxSpotlight) break;
+      if (match.court > 0 && !usedCourts.has(match.court)) {
+        spotlight.push(match);
+        usedCourts.add(match.court);
+      }
+    }
+    for (const match of pool) {
+      if (spotlight.length >= maxSpotlight) break;
+      if (!spotlight.includes(match)) spotlight.push(match);
+    }
+    const seated = new Set(spotlight.map((match) => match.id));
+    return { spotlight, deferred: pool.filter((match) => !seated.has(match.id)) };
+  }
+
   const incomplete = [...matches]
     .filter((m) => !m.completed)
     .sort((a, b) => matchQueueRank(a) - matchQueueRank(b) || a.id - b.id);

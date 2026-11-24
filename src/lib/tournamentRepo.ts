@@ -26,6 +26,14 @@ import {
 
   toPgIntArray,
 
+  syncPlayoffBracket,
+
+  syncPlayingCourts,
+
+  stampOpenMatchStarts,
+
+  playoffStageOf,
+
 } from '@/lib/gameLogic';
 
 
@@ -89,6 +97,8 @@ type DbMatchRow = {
   ended_at?: string | Date | null;
 
   match_number?: number | null;
+
+  stage?: string | null;
 
 };
 
@@ -241,6 +251,8 @@ function buildTournamentFromRows(
 
       m.winner_team === 'A' || m.winner_team === 'B' ? (m.winner_team as 'A' | 'B') : null,
 
+    stage: playoffStageOf(m.stage),
+
   }));
 
 
@@ -328,7 +340,8 @@ export async function assembleTournament(id: string): Promise<Tournament | null>
           'streak_b', coalesce(m.streak_b, 0),
           'started_at', m.started_at,
           'ended_at', m.ended_at,
-          'match_number', coalesce(m.match_number, 0)
+          'match_number', coalesce(m.match_number, 0),
+          'stage', coalesce(m.stage, '')
         ) order by m.id)
         from matches m
         where m.tournament_id = t.id
@@ -343,6 +356,15 @@ export async function assembleTournament(id: string): Promise<Tournament | null>
   const needsNumbers = row.matches.some((match) => Number(match.court) > 0 && !(Number(match.match_number) > 0));
   const tournament = buildTournamentFromRows(row.tournament, row.players, row.matches);
   if (needsNumbers) await persistMatchNumbers(id, tournament.matches);
+  if (!tournament.isFinalized && syncPlayoffBracket(tournament)) {
+    syncPlayingCourts(tournament);
+    if (tournament.startedAt) stampOpenMatchStarts(tournament, new Date().toISOString());
+    await persistPlayoffMatches(id, tournament.matches);
+    await persistMatchCourts(id, tournament.matches);
+    await persistMatchNumbers(id, tournament.matches);
+    if (tournament.startedAt) await persistOpenMatchStarts(id, new Date());
+    await sql`update tournaments set current_round = ${tournament.currentRound} where id = ${id}`;
+  }
   return tournament;
 }
 
@@ -351,6 +373,7 @@ export async function assembleTournament(id: string): Promise<Tournament | null>
 /** Bulk-load tournaments in 3 queries total instead of 3 per tournament. */
 
 export async function assembleTournaments(rows: DbTournamentRow[]): Promise<Tournament[]> {
+  await ensureTournamentMeta();
 
   if (rows.length === 0) return [];
 
@@ -384,7 +407,9 @@ export async function assembleTournaments(rows: DbTournamentRow[]): Promise<Tour
 
       coalesce(streak_a, 0) as streak_a, coalesce(streak_b, 0) as streak_b,
 
-      started_at, ended_at, coalesce(match_number, 0) as match_number
+      started_at, ended_at, coalesce(match_number, 0) as match_number,
+
+      coalesce(stage, '') as stage
 
     from matches where tournament_id in ${sql(ids)}
 
@@ -462,6 +487,74 @@ export async function persistMatchNumbers(tournamentId: string, matches: Match[]
       ${toPgIntArray(matches.map((match) => match.matchNumber ?? 0))}::int[]
     ) as v(id, match_number)
     where m.tournament_id = ${tournamentId} and m.id = v.id`;
+}
+
+function asTimestamp(value: string | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Inserts, updates, or deletes knockout matches so the database matches the bracket. */
+export async function persistPlayoffMatches(tournamentId: string, matches: Match[]): Promise<void> {
+  const playoff = matches.filter((match) => match.stage);
+  if (playoff.length === 0) {
+    await sql`delete from matches where tournament_id = ${tournamentId} and stage <> ''`;
+    return;
+  }
+
+  await sql`
+    delete from matches
+    where tournament_id = ${tournamentId}
+      and stage <> ''
+      and id <> all(${toPgIntArray(playoff.map((match) => match.id))}::int[])
+  `;
+
+  for (const match of playoff) {
+    const startedAt = asTimestamp(match.startedAt);
+    const endedAt = asTimestamp(match.endedAt);
+    await sql`
+      insert into matches (
+        tournament_id, id, round, court, team_a_id, team_b_id,
+        team_a_p1, team_a_p2, team_b_p1, team_b_p2,
+        score_a, score_b, completed, winner_team, stage,
+        queue_order, finish_order, streak_a, streak_b, match_number,
+        started_at, ended_at
+      ) values (
+        ${tournamentId}, ${match.id}, ${match.round}, ${match.court},
+        ${match.teamAId}, ${match.teamBId},
+        ${match.teamA.player1}, ${match.teamA.player2},
+        ${match.teamB.player1}, ${match.teamB.player2},
+        ${match.scoreA}, ${match.scoreB}, ${match.completed},
+        ${match.winnerTeam ?? null}, ${match.stage ?? ''},
+        ${match.queueOrder ?? 0}, ${match.finishOrder ?? 0},
+        ${match.streakA ?? 0}, ${match.streakB ?? 0},
+        ${match.matchNumber ?? 0},
+        ${startedAt}, ${endedAt}
+      )
+      on conflict (tournament_id, id) do update set
+        round = excluded.round,
+        court = excluded.court,
+        team_a_id = excluded.team_a_id,
+        team_b_id = excluded.team_b_id,
+        team_a_p1 = excluded.team_a_p1,
+        team_a_p2 = excluded.team_a_p2,
+        team_b_p1 = excluded.team_b_p1,
+        team_b_p2 = excluded.team_b_p2,
+        score_a = excluded.score_a,
+        score_b = excluded.score_b,
+        completed = excluded.completed,
+        winner_team = excluded.winner_team,
+        stage = excluded.stage,
+        queue_order = excluded.queue_order,
+        finish_order = excluded.finish_order,
+        streak_a = excluded.streak_a,
+        streak_b = excluded.streak_b,
+        match_number = excluded.match_number,
+        started_at = excluded.started_at,
+        ended_at = excluded.ended_at
+    `;
+  }
 }
 
 /** Start clock for matches that are on a court and have not started yet. */

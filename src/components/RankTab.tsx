@@ -7,6 +7,8 @@ import {
   getRankedPlayers,
   isSinglesEvent,
   isTournamentComplete,
+  playingNowTitle,
+  standingsHint,
 } from '@/lib/gameLogic';
 import { ChartBarIcon } from '@heroicons/react/24/outline';
 import TabPanel from '@/components/TabPanel';
@@ -74,7 +76,8 @@ export default function RankTab({
   const getPlayerName = (playerId: number) =>
     tournament.players.find((p) => p.id === playerId)?.name ?? '';
 
-  const subtitle = isComplete ? 'Complete' : `Round ${tournament.currentRound}`;
+  const phaseTitle = playingNowTitle(tournament.matches);
+  const subtitle = isComplete ? 'Complete' : phaseTitle === 'Playing Now' ? `Round ${tournament.currentRound}` : phaseTitle;
 
   const singles = isSinglesEvent(tournament.eventType);
   const standings = (
@@ -145,7 +148,7 @@ export default function RankTab({
       title={isComplete ? 'Final Standings' : 'Standings'}
       subtitle={subtitle}
       icon={<ChartBarIcon className="w-5 h-5 text-gray-900 shrink-0" />}
-      toolbar={<p className="tab-toolbar-hint">Ranked by W-L, then point differential</p>}
+      toolbar={<p className="tab-toolbar-hint">{standingsHint(tournament)}</p>}
     >
       {standings}
     </TabPanel>

@@ -23,6 +23,11 @@ import {
   matchesShareParticipants,
   matchesConflictWithAny,
   requeueMatch,
+  seedTeams,
+  syncPlayoffBracket,
+  playingNowTitle,
+  playoffPlaces,
+  playoffMatchLabel,
   startTournament,
   UNASSIGNED_COURT,
   defaultCourtNumbers,
@@ -399,7 +404,12 @@ describe('Game Logic', () => {
           next = updateMatchScore(next, spotlight[0].id, 21, 15);
         }
         expect(isTournamentComplete(next)).toBe(true);
-        const longest = Math.max(...next.matches.flatMap((match) => [match.streakA ?? 1, match.streakB ?? 1]));
+        if (count === 6) {
+          expect(next.matches.filter((match) => match.stage === 'semi')).toHaveLength(2);
+          expect(next.matches.filter((match) => match.stage === 'final' || match.stage === 'third')).toHaveLength(2);
+        }
+        const roundRobin = next.matches.filter((match) => !match.stage);
+        const longest = Math.max(...roundRobin.flatMap((match) => [match.streakA ?? 1, match.streakB ?? 1]));
         expect(longest).toBeLessThanOrEqual(count === 6 ? 3 : 2);
       }
     });
@@ -653,6 +663,118 @@ describe('Game Logic', () => {
       const replacement = next.matches.find((match) => match.court === 11 && match.id !== first.id);
       expect(replacement?.matchNumber).toBe(3);
       expect(next.matches.filter((match) => match.court <= 0).every((match) => match.matchNumber == null)).toBe(true);
+    });
+  });
+
+  describe('6-team playoffs', () => {
+    function playRoundRobin(lowerTeamWins = true) {
+      let next = createTournament(sampleTeams);
+      const roundRobin = next.matches.filter((match) => !match.stage);
+      for (const match of roundRobin) {
+        const lowIsA = match.teamAId < match.teamBId;
+        const teamAWins = lowerTeamWins ? lowIsA : !lowIsA;
+        next = updateMatchScore(next, match.id, teamAWins ? 21 : 15, teamAWins ? 15 : 21);
+      }
+      return next;
+    }
+
+    it('opens semis as 1st vs 4th and 2nd vs 3rd once the round robin is done', () => {
+      const next = playRoundRobin();
+      const semis = next.matches.filter((match) => match.stage === 'semi').sort((a, b) => a.id - b.id);
+
+      expect(next.matches.filter((match) => !match.stage)).toHaveLength(15);
+      expect(semis.map((match) => [match.teamAId, match.teamBId])).toEqual([
+        [1, 4],
+        [2, 3],
+      ]);
+      expect(playoffMatchLabel(semis[0], next.matches)).toBe('1st vs 4th');
+      expect(playoffMatchLabel(semis[1], next.matches)).toBe('2nd vs 3rd');
+      expect(playingNowTitle(next.matches)).toBe('Semifinals');
+      expect(getDesktopSpotlightMatches(next.matches, 2).spotlight.map((match) => match.id)).toEqual(
+        semis.map((match) => match.id)
+      );
+      expect(getRankedTeams(next).map((team) => team.id)).toEqual([1, 2, 3, 4, 5, 6]);
+    });
+
+    it('ranks 1st–4th from the knockout and leaves 5th and 6th on the round robin', () => {
+      let next = playRoundRobin();
+      const winsAfterRoundRobin = next.teams.map((team) => team.wins);
+      const semis = next.matches.filter((match) => match.stage === 'semi').sort((a, b) => a.id - b.id);
+
+      next = updateMatchScore(next, semis[0].id, 21, 15);
+      next = updateMatchScore(next, semis[1].id, 15, 21);
+      expect(playingNowTitle(next.matches)).toBe('Finals');
+
+      const final = next.matches.find((match) => match.stage === 'final')!;
+      const third = next.matches.find((match) => match.stage === 'third')!;
+      expect([final.teamAId, final.teamBId]).toEqual([1, 3]);
+      expect([third.teamAId, third.teamBId]).toEqual([4, 2]);
+
+      next = updateMatchScore(next, final.id, 21, 15);
+      next = updateMatchScore(next, third.id, 15, 21);
+
+      expect(isTournamentComplete(next)).toBe(true);
+      expect(playoffPlaces(next)?.get(1)).toBe(1);
+      expect(getRankedTeams(next).map((team) => [team.id, team.rank])).toEqual([
+        [1, 1],
+        [3, 2],
+        [2, 3],
+        [4, 4],
+        [5, 5],
+        [6, 6],
+      ]);
+      expect(next.teams.map((team) => team.wins)).toEqual(winsAfterRoundRobin);
+      expect(getRankedPlayers(next).find((player) => player.teamId === 5)?.rank).toBe(5);
+    });
+
+    it('drops the knockout when a round-robin game is sent back, and drops the final when a semi is', () => {
+      let next = playRoundRobin();
+      const lastRoundRobin = [...next.matches].reverse().find((match) => !match.stage)!;
+      const pulled = requeueMatch(next, lastRoundRobin.id);
+      expect(pulled.matches.some((match) => match.stage)).toBe(false);
+
+      next = playRoundRobin();
+      const semis = next.matches.filter((match) => match.stage === 'semi');
+      next = updateMatchScore(next, semis[0].id, 21, 15);
+      next = updateMatchScore(next, semis[1].id, 21, 15);
+      expect(next.matches.some((match) => match.stage === 'final')).toBe(true);
+      const replayed = requeueMatch(next, semis[0].id);
+      expect(replayed.matches.some((match) => match.stage === 'final' || match.stage === 'third')).toBe(false);
+      expect(replayed.matches.some((match) => match.stage === 'semi' && !match.completed)).toBe(true);
+    });
+
+    it('breaks a 4th-place tie on head-to-head', () => {
+      const tournament = createTournament(sampleTeams);
+      const wins = [5, 4, 3, 2, 2, 1];
+      tournament.teams.forEach((team, index) => {
+        team.wins = wins[index];
+        team.losses = 5 - wins[index];
+        team.pointDiff = 0;
+        team.pointsFor = 100;
+      });
+      const meeting = tournament.matches.find(
+        (match) =>
+          (match.teamAId === 4 && match.teamBId === 5) || (match.teamAId === 5 && match.teamBId === 4)
+      )!;
+      meeting.completed = true;
+      meeting.winnerTeam = meeting.teamAId === 5 ? 'A' : 'B';
+      meeting.scoreA = meeting.winnerTeam === 'A' ? 21 : 15;
+      meeting.scoreB = meeting.winnerTeam === 'A' ? 15 : 21;
+
+      expect(seedTeams(tournament).map((team) => team.id).slice(0, 4)).toEqual([1, 2, 3, 5]);
+    });
+
+    it('does not add a knockout for 7 teams', () => {
+      const seven = createTournament([...sampleTeams, { player1: 'Gina', player2: 'Grace' }]);
+      for (const match of seven.matches) {
+        match.completed = true;
+        match.scoreA = 21;
+        match.scoreB = 15;
+        match.winnerTeam = 'A';
+      }
+      expect(syncPlayoffBracket(seven)).toBe(false);
+      expect(seven.matches.every((match) => !match.stage)).toBe(true);
+      expect(playingNowTitle(seven.matches)).toBe('Playing Now');
     });
   });
 });

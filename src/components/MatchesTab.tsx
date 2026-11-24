@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Tournament, getTournamentRoundCount } from '@/lib/gameLogic';
+import { Tournament, getTournamentRoundCount, roundHeading } from '@/lib/gameLogic';
 import TabPanel from '@/components/TabPanel';
 import { TrophyIcon } from '@heroicons/react/24/outline';
 import MatchCard from '@/components/matches/MatchCard';
@@ -82,7 +82,7 @@ export default function MatchesTab({ tournament, onScoreUpdate, onRequeue, onFin
       <div className="matches-tab-mobile">
         <TabPanel
           title="Matches"
-          subtitle={`Round ${selectedRound}`}
+          subtitle={roundHeading(tournament.matches, selectedRound)}
           icon={<TrophyIcon className="w-5 h-5 text-gray-900 shrink-0" />}
           toolbar={roundToolbar}
         >

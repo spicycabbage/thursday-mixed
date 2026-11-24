@@ -102,6 +102,7 @@ alter table tournaments add column if not exists started_at timestamptz;
 alter table matches add column if not exists started_at timestamptz;
 alter table matches add column if not exists ended_at timestamptz;
 alter table matches add column if not exists match_number int not null default 0;
+alter table matches add column if not exists stage text not null default '';
 `;
 
 let metaReady: Promise<void> | null = null;
@@ -121,7 +122,7 @@ async function runStatements(sqlText: string): Promise<void> {
   }
 }
 
-const META_COLUMN_COUNT = 11;
+const META_COLUMN_COUNT = 12;
 
 // ALTER TABLE takes an ACCESS EXCLUSIVE lock even when the column already exists,
 // so cold starts check the catalog first and only migrate when something is missing.
@@ -145,7 +146,8 @@ async function schemaState(): Promise<{ schemaOk: boolean; metaOk: boolean }> {
             ('tournaments', 'started_at'),
             ('matches', 'started_at'),
             ('matches', 'ended_at'),
-            ('matches', 'match_number')
+            ('matches', 'match_number'),
+            ('matches', 'stage')
           )
       ) as meta_cols
   `;

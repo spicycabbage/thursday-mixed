@@ -14,6 +14,7 @@ import {
   courtCountForTeams,
   getRankedTeams,
   isTournamentComplete,
+  playingNowTitle,
 } from '@/lib/gameLogic';
 import TeamStandingsPanel from '@/components/TeamStandingsPanel';
 import MatchCard from '@/components/matches/MatchCard';
@@ -149,7 +150,7 @@ export default function MatchesDesktopLayout({
             </div>
           )}
           <div className="matches-desktop-header">
-            <h3 className="text-lg font-bold text-gray-900">Playing Now</h3>
+            <h3 className="text-lg font-bold text-gray-900">{playingNowTitle(tournament.matches)}</h3>
             <span className="tab-meta">{progressLabel}</span>
           </div>
 

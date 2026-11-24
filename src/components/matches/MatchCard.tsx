@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Tournament, Match, validateScore, getTeamLabel, formatCourtLabel, formatSideNames } from '@/lib/gameLogic';
+import { Tournament, Match, validateScore, getTeamLabel, formatCourtLabel, formatSideNames, playoffMatchLabel } from '@/lib/gameLogic';
 import { formatMatchWindow } from '@/lib/matchClock';
 import { hasUnsavedScoreInput } from '@/lib/tournamentSync';
 
@@ -108,8 +108,10 @@ export default function MatchCard({
   if (variant === 'mini' && roster) {
     const statusClass = isCompleted ? 'match-mini-completed' : 'match-mini-future';
 
+    const stageLabel = playoffMatchLabel(match, tournament.matches);
     const matchLabel =
       queueLabel ??
+      stageLabel ??
       (labelMode === 'sequential'
         ? match.matchNumber
           ? `Match ${match.matchNumber}`
@@ -196,7 +198,8 @@ export default function MatchCard({
       : isUpNext
         ? 'match-mini-active'
         : 'match-mini-future';
-    const matchLabel = labelMode === 'sequential' ? (match.matchNumber ? `#${match.matchNumber}` : '') : `R${match.round}`;
+    const stageLabel = playoffMatchLabel(match, tournament.matches);
+    const matchLabel = stageLabel ?? (labelMode === 'sequential' ? (match.matchNumber ? `#${match.matchNumber}` : '') : `R${match.round}`);
     const miniCourtLabel = formatCourtLabel(match.court, true);
     const body = (
       <>
@@ -266,6 +269,8 @@ export default function MatchCard({
       <p className={isSpotlight ? 'match-caption-spotlight' : 'tab-caption mb-3'}>
         {(() => {
           const courtLabel = formatCourtLabel(match.court);
+          const stageLabel = playoffMatchLabel(match, tournament.matches);
+          if (stageLabel) return courtLabel ? `${stageLabel} · ${courtLabel}` : stageLabel;
           if (labelMode === 'sequential') {
             const number = match.matchNumber ? `Match ${match.matchNumber}` : '';
             if (number && courtLabel) return `${number} · ${courtLabel}`;

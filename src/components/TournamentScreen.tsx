@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { Tournament, updateMatchScore, requeueMatch, startTournament, isTournamentComplete, getTournamentRoundCount, getTeamLabel } from '@/lib/gameLogic';
+import { Tournament, updateMatchScore, requeueMatch, startTournament, isTournamentComplete, getTournamentRoundCount, getTeamLabel, playoffMatchLabel } from '@/lib/gameLogic';
 import { subscribeLiveTournament } from '@/lib/liveUpdates';
 import { readCachedTournament, writeCachedTournament } from '@/lib/tournamentCache';
 import { canApplyRemoteTournament, TOURNAMENT_LIVE_REFRESH_MS, TOURNAMENT_REFRESH_MS } from '@/lib/tournamentSync';
@@ -198,10 +198,13 @@ export default function TournamentScreen({
             let msg = `Scores updated for Round ${round}: ${scoreA}-${scoreB}`;
             try {
               const match = base?.matches.find((m) => m.id === matchId);
-              if (match) {
+              if (match && base) {
                 const teamA = getTeamLabel(match.teamAId);
                 const teamB = getTeamLabel(match.teamBId);
-                msg = `Round ${round}: Team ${teamA} vs Team ${teamB} — ${scoreA}-${scoreB}`;
+                const stageLabel = playoffMatchLabel(match, base.matches);
+                msg = stageLabel
+                  ? `${stageLabel}: Team ${teamA} vs Team ${teamB} — ${scoreA}-${scoreB}`
+                  : `Round ${round}: Team ${teamA} vs Team ${teamB} — ${scoreA}-${scoreB}`;
               }
             } catch {}
             setToast(msg);

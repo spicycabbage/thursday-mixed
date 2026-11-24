@@ -348,7 +348,7 @@ export default function CreateTournamentPage() {
                         teamCount === count ? 'text-blue-100' : 'text-slate-700'
                       }`}
                     >
-                      {matchCountForTeams(count)} games
+                      {count === 6 ? '15 + playoffs' : `${matchCountForTeams(count)} games`}
                     </span>
                   </button>
                 ))}
@@ -395,7 +395,10 @@ export default function CreateTournamentPage() {
         <PageContent className="registration-page-content">
           <p className="page-subtitle text-center mb-4 md:text-left md:mb-6">
             Register {teamCount} {entryNouns} (A–{lastLabel})
-            {singles ? '' : ', 2 players each'}. {matchCountForTeams(teamCount)} games, round robin on {courtCountForTeams(teamCount)} courts.
+            {singles ? '' : ', 2 players each'}.{' '}
+            {teamCount === 6
+              ? '15 round-robin games, then semifinals (1st vs 4th, 2nd vs 3rd) and finals, on 2 courts.'
+              : `${matchCountForTeams(teamCount)} games, round robin on ${courtCountForTeams(teamCount)} courts.`}
           </p>
 
           <div className="registration-teams-grid">

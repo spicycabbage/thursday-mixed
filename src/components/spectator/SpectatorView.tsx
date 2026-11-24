@@ -16,6 +16,7 @@ import {
   getRankedTeams,
   isSinglesEvent,
   isTournamentComplete,
+  playingNowTitle,
 } from '@/lib/gameLogic';
 import MatchCard from '@/components/matches/MatchCard';
 import RestingCourtCard from '@/components/matches/RestingCourtCard';
@@ -171,6 +172,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
         .sort((a, b) => (b.matchNumber ?? 0) - (a.matchNumber ?? 0)),
     [sortedMatches]
   );
+  const courtTitle = playingNowTitle(tournament.matches);
   const tournamentComplete = isTournamentComplete(tournament);
   const podium = useMemo(
     () =>
@@ -188,7 +190,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
       pane = (
         <>
           <div className="spectator-meta">
-            <span>{tournamentComplete ? 'Final' : 'On court'}</span>
+            <span>{tournamentComplete ? 'Final' : courtTitle}</span>
             <span>
               {completed.length}/{sortedMatches.length}
             </span>
@@ -321,7 +323,7 @@ export default function SpectatorView({ tournament }: { tournament: Tournament }
               aria-current={tab === item.id ? 'page' : undefined}
               onClick={() => setTab(item.id)}
             >
-              {item.label}
+              {item.id === 'playing' ? courtTitle : item.label}
             </button>
           ))}
         </nav>
